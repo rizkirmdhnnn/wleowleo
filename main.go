@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"wleowleo/config"
 	"wleowleo/logger"
@@ -25,6 +26,7 @@ func main() {
 	// Setup ChromeDP
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserAgent(cfg.UserAgent),
+		chromedp.Flag("headless", false),
 	)
 
 	// Create browser context
@@ -58,10 +60,34 @@ func main() {
 
 	// Download videos if enabled
 	if cfg.AutoDownload {
-		log.Info.Println("Starting video download...")
+		log.Info.Println("Starting video download in parallel (limited to 5 concurrent downloads)...")
+		var wg sync.WaitGroup
+
+		// Create a semaphore with buffer size 5 to limit concurrent downloads
+		semaphore := make(chan struct{}, 5)
+
 		for _, link := range *links {
-			scrpr.DownloadVideo(link.M3U8)
+			wg.Add(1)
+			go func(url string) {
+				// Acquire semaphore
+				semaphore <- struct{}{}
+				defer func() {
+					// Release semaphore when done
+					<-semaphore
+					wg.Done()
+				}()
+
+				if url == "" {
+					log.Warning.Println("No video link found for this page")
+					return
+				}
+				scrpr.DownloadVideo(url)
+			}(link.M3U8)
 		}
+
+		// Wait for all downloads to complete
+		wg.Wait()
+		log.Info.Println("All video downloads completed")
 	}
 
 	// Print results
