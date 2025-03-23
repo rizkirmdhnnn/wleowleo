@@ -10,15 +10,35 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"wleowleo-downloader/config"
 
 	"github.com/sirupsen/logrus"
 )
+
+type Scraper struct {
+	Config *config.Config
+	Log    *logrus.Logger
+}
+
+type PageLink struct {
+	Title string `json:"title"`
+	Link  string `json:"url"`
+	M3U8  string `json:"m3u8"`
+}
 
 // downloadJob represents a single download task
 type downloadJob struct {
 	index    int
 	url      string
 	fileName string
+}
+
+// New creates a new Scraper
+func New(cfg *config.Config, log *logrus.Logger) *Scraper {
+	return &Scraper{
+		Config: cfg,
+		Log:    log,
+	}
 }
 
 // Download video from m3u8 link

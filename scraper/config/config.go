@@ -15,6 +15,13 @@ type Config struct {
 	Pages           int
 	AutoDownload    bool
 	LimitConcurrent int
+
+	// RabbitMQ
+	RabbitMQHost     string
+	RabbitMQPort     int
+	RabbitMQUser     string
+	RabbitMQPassword string
+	RabbitMQQueue    string
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -69,11 +76,22 @@ func LoadConfig() *Config {
 		log.Panic("Error converting LIMIT_CONCURRENT to integer:", err)
 	}
 
+	rabbitMQPort, err := strconv.Atoi(os.Getenv("RABBITMQ_PORT"))
+	if err != nil {
+		log.Panic("RABBITMQ_PORT is required")
+	}
+
 	return &Config{
 		BaseURL:         baseURL,
 		UserAgent:       userAgent,
 		Pages:           pageInt,
 		AutoDownload:    autoDownload == "true",
 		LimitConcurrent: limitConcurrentInt,
+
+		RabbitMQHost:     os.Getenv("RABBITMQ_HOST"),
+		RabbitMQPort:     rabbitMQPort,
+		RabbitMQUser:     os.Getenv("RABBITMQ_USER"),
+		RabbitMQPassword: os.Getenv("RABBITMQ_PASSWORD"),
+		RabbitMQQueue:    os.Getenv("RABBITMQ_QUEUE"),
 	}
 }

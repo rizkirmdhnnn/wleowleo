@@ -1,5 +1,6 @@
-output/*
-!output/.gitignore
-temp/*
-!temp/.gitignore
-.env
+downloader/output/*
+
+downloader/temp/*
+
+scraper/.env
+downloader/.env
