@@ -1,6 +1,12 @@
 # WleoWleo Scraper
 
-Hai! Ini adalah aplikasi Go buat nyedot dan download video-video wleowleo yang mantap-mantap itu lho. Kalian gak usah ngerti linknya ya, nanti dosa 😉. Tool ini bakal otomatis nyari link video dan download-nya dalam format MP4 buat kalian.
+<div align="center">
+<img src="https://pbs.twimg.com/media/Fjv-7DQVIAAnqdn.jpg" alt="drawing" width="250"/>
+
+*Hai! Ini adalah aplikasi Go buat nyedot dan download video-video wleowleo yang mantap-mantap itu lho. Kalian gak usah ngerti linknya ya, nanti dosa 😉. Tool ini bakal otomatis nyari link video dan download-nya dalam format MP4 buat kalian.*
+
+</div>
+
 
 ## Fitur Keren
 
