@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  wleowleo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wleowleo-scraper
+    volumes:
+      # Mount output directory to save scraped data and downloaded videos
+      - ./output:/app/output
+      # Mount temp directory for temporary files during processing
+      - ./temp:/app/temp
+      # Mount .env file for configuration
+      - ./.env:/app/.env:ro
+    environment:
+      # Set environment variables for Chrome in container
+      - DISPLAY=:99
+    restart: "no"
+    # Use init to properly handle signals and zombie processes
+    init: true
