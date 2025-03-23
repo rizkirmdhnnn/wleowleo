@@ -3,9 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"wleowleo/config"
 	"wleowleo/logger"
@@ -22,15 +19,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Setup signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		log.Info.Println("Received shutdown signal. Cleaning up...")
-		cancel()
-	}()
-
 	// Initialize configuration
 	cfg := config.LoadConfig()
 
@@ -39,6 +27,7 @@ func main() {
 		chromedp.UserAgent(cfg.UserAgent),
 	)
 
+	// Create browser context
 	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
 	defer allocCancel()
 
