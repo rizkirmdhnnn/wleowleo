@@ -24,6 +24,8 @@
 
 ## Cara Pasang
 
+### Cara 1: Pasang Langsung
+
 1. Clone repo-nya dulu:
 
 ```bash
@@ -49,6 +51,55 @@ sudo apt-get install ffmpeg
 # Buat pengguna Windows
 # Download aja dari https://ffmpeg.org/download.html
 ```
+
+### Cara 2: Pake Docker
+
+Kalo males install Go, Chrome, dan FFmpeg, bisa pake Docker aja. Lebih gampang!
+
+#### Persiapan
+
+1. Pastiin [Docker](https://www.docker.com/products/docker-desktop/) dan [Docker Compose](https://docs.docker.com/compose/install/) udah terpasang di komputer kamu.
+
+2. Clone repo-nya dulu:
+
+```bash
+git clone https://github.com/rizkirmdhnnn/wleowleo.git
+cd wleowleo
+```
+
+3. Bikin file `.env` (lihat bagian "Setting Konfigurasi" di bawah).
+
+4. Bikin folder `output` dan `temp` (kalo belum ada):
+
+```bash
+mkdir -p output temp
+```
+
+#### Cara Jalanin
+
+**Pake Docker Compose (Direkomendasikan):**
+
+```bash
+docker compose up
+```
+
+Atau kalo mau jalanin di background:
+
+```bash
+docker compose up -d
+```
+
+**Pake Docker Langsung:**
+
+```bash
+# Build image dulu
+docker build -t wleowleo .
+
+# Jalanin container
+docker run --rm -v "$(pwd)/output:/app/output" -v "$(pwd)/temp:/app/temp" -v "$(pwd)/.env:/app/.env:ro" wleowleo
+```
+
+Semua hasil scraping dan video bakal disimpen di folder `output` di komputer kamu.
 
 ## Setting Konfigurasi
 
