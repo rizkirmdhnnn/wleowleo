@@ -26,7 +26,7 @@ func main() {
 	// Setup ChromeDP
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserAgent(cfg.UserAgent),
-		chromedp.Flag("headless", false),
+		//  chromedp.Flag("headless", false),
 	)
 
 	// Create browser context
