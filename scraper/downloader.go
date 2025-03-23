@@ -202,7 +202,5 @@ func processM3U8File(m3u8URL string) error {
 		return err
 	}
 	os.RemoveAll(basefolder)
-
-	fmt.Println("Proses selesai, file MP4 disimpan dengan nama: output.mp4")
 	return nil
 }
