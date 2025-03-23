@@ -3,7 +3,6 @@ package scraper
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+	"github.com/sirupsen/logrus"
 )
 
 type PageLink struct {
@@ -21,11 +21,15 @@ type PageLink struct {
 }
 
 type Scraper struct {
-	Config config.Config
+	Config *config.Config
+	Log    *logrus.Logger
 }
 
-func New(cfg config.Config) *Scraper {
-	return &Scraper{Config: cfg}
+func New(cfg *config.Config, log *logrus.Logger) *Scraper {
+	return &Scraper{
+		Config: cfg,
+		Log:    log,
+	}
 }
 
 func (s *Scraper) ScrapePage(ctx context.Context, totalPage int) (*[]PageLink, error) {
@@ -35,7 +39,7 @@ func (s *Scraper) ScrapePage(ctx context.Context, totalPage int) (*[]PageLink, e
 
 	for i := 1; i <= totalPage; i++ {
 		url := fmt.Sprintf("%s/page-%d", s.Config.BaseURL, i)
-		log.Println("Visiting", url)
+		s.Log.Info("Scraping page: ", url)
 
 		if err := chromedp.Run(ctx,
 			network.Enable(),
@@ -45,7 +49,7 @@ func (s *Scraper) ScrapePage(ctx context.Context, totalPage int) (*[]PageLink, e
 			chromedp.Evaluate(`[...document.querySelectorAll('a[href*="watch/"]')].map(a => a.href)`, &pageLinks),
 			chromedp.Evaluate(`[...document.querySelectorAll('a[href*="watch/"]')].map(a => a.title)`, &pageTitles),
 		); err != nil {
-			log.Printf("Error scraping %s: %v", url, err)
+			s.Log.Error("Error scraping page: ", url)
 			return nil, err
 		}
 
@@ -62,7 +66,7 @@ func (s *Scraper) ScrapePage(ctx context.Context, totalPage int) (*[]PageLink, e
 	}
 
 	chromedp.Cancel(ctx)
-	//log.Print("Scraped links:" + fmt.Sprint(links))
+	s.Log.Info("Scraped ", len(links), " links")
 	return &links, nil
 }
 
@@ -77,7 +81,9 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 		switch e := ev.(type) {
 		case *network.EventRequestWillBeSent:
 			if strings.Contains(e.Request.URL, ".m3u8") {
-				log.Printf("Found video link: %s", e.Request.URL)
+				s.Log.WithFields(logrus.Fields{
+					"url": e.Request.URL,
+				}).Info("Successfully found video link")
 
 				for i, link := range *linkpage {
 					if link.Link == currentURL {
@@ -94,7 +100,10 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 
 	for _, link := range *linkpage {
 		currentURL = link.Link
-		log.Printf("Navigating to %s - %s", link.Title, link.Link)
+		s.Log.WithFields(logrus.Fields{
+			"title": link.Title,
+			"link":  link.Link,
+		}).Info("Scraping video link")
 
 		select {
 		case <-foundLink:
@@ -108,7 +117,11 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 				chromedp.Navigate(url),
 			)
 			if err != nil {
-				log.Printf("Error navigating to %s: %v", url, err)
+				s.Log.WithFields(logrus.Fields{
+					"error": err,
+					"title": link.Title,
+					"link":  link.Link,
+				}).Error("Scraping video link")
 				foundLink <- true
 				return
 			}
@@ -117,7 +130,8 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 		select {
 		case <-foundLink:
 		case <-time.After(time.Duration(10) * time.Second):
-			log.Printf("Timeout for %s, continuing to next URL", currentURL)
+			// log.Printf("Timeout for %s, continuing to next URL", currentURL)
+			s.Log.Warning("Timeout for ", currentURL, ", continuing to next URL")
 		}
 	}
 }

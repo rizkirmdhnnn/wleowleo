@@ -11,6 +11,7 @@ import (
 func (s *Scraper) ExportLinks(links *[]PageLink, outputDir string) (string, error) {
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		s.Log.Error("Error creating output directory:", err)
 		return "", err
 	}
 
@@ -21,11 +22,13 @@ func (s *Scraper) ExportLinks(links *[]PageLink, outputDir string) (string, erro
 	// Convert links to JSON
 	data, err := json.MarshalIndent(links, "", "  ")
 	if err != nil {
+		s.Log.Error("Error marshalling links to JSON:", err)
 		return "", err
 	}
 
 	// Write to file
 	if err := os.WriteFile(filename, data, 0644); err != nil {
+		s.Log.Error("Error writing links to file:", err)
 		return "", err
 	}
 

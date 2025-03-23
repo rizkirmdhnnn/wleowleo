@@ -10,14 +10,15 @@ import (
 )
 
 type Config struct {
-	BaseURL      string
-	UserAgent    string
-	Pages        int
-	AutoDownload bool
+	BaseURL         string
+	UserAgent       string
+	Pages           int
+	AutoDownload    bool
+	LimitConcurrent int
 }
 
 // LoadConfig loads configuration from environment variables.
-func LoadConfig() Config {
+func LoadConfig() *Config {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		// Log error but continue - we might be using environment variables directly
 		log.Printf("Warning: Error loading .env file: %v\n", err)
@@ -28,6 +29,7 @@ func LoadConfig() Config {
 	userAgent := os.Getenv("USERAGENT")
 	pages := os.Getenv("PAGES")
 	autoDownload := os.Getenv("AUTO_DOWNLOAD")
+	limitConcurrent := os.Getenv("LIMIT_CONCURRENT")
 
 	// Check if required environment variables are set
 	if baseURL == "" {
@@ -41,6 +43,9 @@ func LoadConfig() Config {
 	}
 	if autoDownload == "" {
 		log.Panic("AUTO_DOWNLOAD is required")
+	}
+	if limitConcurrent == "" {
+		log.Panic("LIMIT_CONCURRENT is required")
 	}
 
 	// Check if ffmpeg is installed
@@ -58,10 +63,17 @@ func LoadConfig() Config {
 		log.Panic("Error converting PAGES to integer:", err)
 	}
 
-	return Config{
-		BaseURL:      baseURL,
-		UserAgent:    userAgent,
-		Pages:        pageInt,
-		AutoDownload: autoDownload == "true",
+	// Convert LIMIT_CONCURRENT to integer
+	limitConcurrentInt, err := strconv.Atoi(limitConcurrent)
+	if err != nil {
+		log.Panic("Error converting LIMIT_CONCURRENT to integer:", err)
+	}
+
+	return &Config{
+		BaseURL:         baseURL,
+		UserAgent:       userAgent,
+		Pages:           pageInt,
+		AutoDownload:    autoDownload == "true",
+		LimitConcurrent: limitConcurrentInt,
 	}
 }
