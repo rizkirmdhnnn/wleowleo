@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: wleowleo-rabbitmq
+    ports:
+      - "5672:5672"   # AMQP protocol port
+      - "15672:15672" # Management UI port
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - wleowleo-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  scraper:
+    build:
+      context: ./scraper
+      dockerfile: Dockerfile
+    container_name: wleowleo-scraper
+    volumes:
+      # Mount output directory to save scraped data
+      - ./output:/app/output
+      # Mount temp directory for temporary files during processing
+      - ./temp:/app/temp
+      # Mount .env file for configuration
+      - ./.env:/app/.env:ro
+    environment:
+      # Set environment variables for Chrome in container
+      - DISPLAY=:99
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_QUEUE=video_queue
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wleowleo-network
+    restart: "no"
+    # Use init to properly handle signals and zombie processes
+    init: true
+
+  downloader:
+    build:
+      context: ./downloader
+      dockerfile: Dockerfile
+    container_name: wleowleo-downloader
+    volumes:
+      # Mount output directory to save downloaded videos
+      - ./output:/app/output
+      # Mount temp directory for temporary files during processing
+      - ./temp:/app/temp
+      # Mount .env file for configuration
+      - ./.env:/app/.env:ro
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_QUEUE=video_queue
+      - LIMIT_CONCURRENT_DOWNLOAD=5
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wleowleo-network
+    restart: "no"
+    # Use init to properly handle signals and zombie processes
+    init: true
+
+networks:
+  wleowleo-network:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
