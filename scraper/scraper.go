@@ -42,8 +42,8 @@ func (s *Scraper) ScrapePage(ctx context.Context, totalPage int) (*[]PageLink, e
 			network.SetBlockedURLs([]string{"*.png", "*.jpg", "*.jpeg", "*.gif"}),
 			emulation.SetScriptExecutionDisabled(true),
 			chromedp.Navigate(url),
-			chromedp.Evaluate(`[...document.querySelectorAll('a[href*="watch"]')].map(a => a.href)`, &pageLinks),
-			chromedp.Evaluate(`[...document.querySelectorAll('a[href*="watch"]')].map(a => a.title)`, &pageTitles),
+			chromedp.Evaluate(`[...document.querySelectorAll('a[href*="watch/"]')].map(a => a.href)`, &pageLinks),
+			chromedp.Evaluate(`[...document.querySelectorAll('a[href*="watch/"]')].map(a => a.title)`, &pageTitles),
 		); err != nil {
 			log.Printf("Error scraping %s: %v", url, err)
 			return nil, err
@@ -61,7 +61,8 @@ func (s *Scraper) ScrapePage(ctx context.Context, totalPage int) (*[]PageLink, e
 		}
 	}
 
-	log.Print("Scraped links:" + fmt.Sprint(links))
+	chromedp.Cancel(ctx)
+	//log.Print("Scraped links:" + fmt.Sprint(links))
 	return &links, nil
 }
 
@@ -103,6 +104,7 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 		go func(url string) {
 			err := chromedp.Run(ctx,
 				network.Enable(),
+				network.SetBlockedURLs([]string{"*.png", "*.jpg", "*.jpeg", "*.gif"}),
 				chromedp.Navigate(url),
 			)
 			if err != nil {
