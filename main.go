@@ -69,7 +69,7 @@ func main() {
 
 		for _, link := range *links {
 			wg.Add(1)
-			go func(url string) {
+			go func(data scraper.PageLink) {
 				// Acquire semaphore
 				semaphore <- struct{}{}
 				defer func() {
@@ -78,12 +78,12 @@ func main() {
 					wg.Done()
 				}()
 
-				if url == "" {
+				if data.Link == "" {
 					log.Warning("Skipping download for empty URL")
 					return
 				}
-				scrpr.DownloadVideo(url)
-			}(link.M3U8)
+				scrpr.DownloadVideo(data)
+			}(link)
 		}
 
 		// Wait for all downloads to complete

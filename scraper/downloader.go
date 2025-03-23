@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 // downloadJob represents a single download task
@@ -20,14 +22,21 @@ type downloadJob struct {
 }
 
 // Download video from m3u8 link
-func (s *Scraper) DownloadVideo(urlM3U8 string) {
-	s.Log.Info("Downloading video from", urlM3U8)
-	err := s.processM3U8File(urlM3U8)
+func (s *Scraper) DownloadVideo(link PageLink) {
+	s.Log.WithFields(logrus.Fields{
+		"title": link.Title,
+		"m3u8":  link.M3U8,
+	}).Info("Downloading video")
+	err := s.processM3U8File(link.M3U8)
 	if err != nil {
 		s.Log.Error("Error downloading video:", err)
 		return
 	}
-	s.Log.Info("Download completed")
+	s.Log.WithFields(logrus.Fields{
+		"title": link.Title,
+		"m3u8":  link.M3U8,
+	}).Info("Download completed")
+
 }
 
 // Convert .ts files to .mp4
@@ -64,7 +73,6 @@ func (s *Scraper) convertTStoMP4(foldername string, tsFiles []string) error {
 	// Run ffmpeg command to concatenate .ts files
 	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", listFileName, "-c:v", "copy", "-c:a", "copy", "-y", outputFile)
 	err = cmd.Run()
-	s.Log.Info("Converted to mp4:", outputFile)
 	if err != nil {
 		s.Log.Error("Error converting to mp4:", err)
 		return fmt.Errorf("ffmpeg error: %v", err)
