@@ -10,11 +10,20 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
+
+// downloadJob represents a single download task
+type downloadJob struct {
+	index    int
+	url      string
+	fileName string
+}
 
 // Download video from m3u8 link
 func (s *Scraper) DownloadVideo(urlM3U8 string) {
 	log.Println("Downloading video from", urlM3U8)
+	log.Println("Using parallel downloading with goroutines")
 	err := processM3U8File(urlM3U8)
 	if err != nil {
 		fmt.Println(err)
@@ -120,17 +129,71 @@ func processM3U8File(m3u8URL string) error {
 	matches := re.FindAllString(string(data), -1)
 
 	var tsFiles []string
+	tsFiles = make([]string, len(matches))
 
-	// Download all .jpg files and save as .ts
+	// Use a wait group to wait for all downloads to complete
+	var wg sync.WaitGroup
+	// Use a mutex to protect access to the error variable
+	var mu sync.Mutex
+	var downloadErr error
+
+	// Number of worker goroutines
+	numWorkers := 5
+	if len(matches) < numWorkers {
+		numWorkers = len(matches)
+	}
+
+	// Create a channel to distribute work
+	jobs := make(chan downloadJob, len(matches))
+
+	// Start worker goroutines
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				// Skip if an error has already occurred
+				mu.Lock()
+				if downloadErr != nil {
+					mu.Unlock()
+					continue
+				}
+				mu.Unlock()
+
+				// Download the file
+				err := downloadFile(job.url, job.fileName)
+				if err != nil {
+					mu.Lock()
+					if downloadErr == nil {
+						downloadErr = fmt.Errorf("error downloading segment %d: %v", job.index, err)
+					}
+					mu.Unlock()
+					continue
+				}
+
+				// Store the file name in the correct position
+				tsFiles[job.index] = job.fileName
+			}
+		}()
+	}
+
+	// Send jobs to the workers
 	for i, match := range matches {
-		// Create .ts file name
 		tsFileName := filepath.Join(basefolder, fmt.Sprintf("segment-%d.ts", i))
-		// Download .ts file
-		if err := downloadFile(match, tsFileName); err != nil {
-			return err
+		jobs <- downloadJob{
+			index:    i,
+			url:      match,
+			fileName: tsFileName,
 		}
-		// Append .ts file name to list
-		tsFiles = append(tsFiles, tsFileName)
+	}
+	close(jobs)
+
+	// Wait for all downloads to complete
+	wg.Wait()
+
+	// Check if any errors occurred during download
+	if downloadErr != nil {
+		return downloadErr
 	}
 
 	// Convert .ts files to MP4
