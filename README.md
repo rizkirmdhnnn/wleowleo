@@ -14,49 +14,16 @@
 - Nyedot link video dari halaman web secara otomatis
 - Download video langsung dalam format MP4
 - Simpen semua link yang udah di-scrape ke file JSON
-- Bisa diatur-atur lewat file konfigurasi
+- Arsitektur microservices dengan RabbitMQ untuk komunikasi antar service
+- Bisa diatur-atur lewat file konfigurasi terpusat
 
 ## Yang Harus Ada
 
-- Go 1.23 ke atas
-- FFmpeg (buat proses download video)
-- Browser Chrome/Chromium
+- Docker dan Docker Compose (untuk instalasi)
 
-## Cara Pasang
+## Cara Pasang dengan Docker
 
-### Cara 1: Pasang Langsung
-
-1. Clone repo-nya dulu:
-
-```bash
-git clone https://github.com/rizkirmdhnnn/wleowleo.git
-cd wleowleo
-```
-
-2. Install yang dibutuhin:
-
-```bash
-go mod download
-```
-
-3. Pastiin FFmpeg udah terpasang di komputer kamu (penting buat download video):
-
-```bash
-# Buat pengguna macOS (pake Homebrew)
-brew install ffmpeg
-
-# Buat pengguna Ubuntu/Debian
-sudo apt-get install ffmpeg
-
-# Buat pengguna Windows
-# Download aja dari https://ffmpeg.org/download.html
-```
-
-### Cara 2: Pake Docker
-
-Kalo males install Go, Chrome, dan FFmpeg, bisa pake Docker aja. Lebih gampang!
-
-#### Persiapan
+### Persiapan
 
 1. Pastiin [Docker](https://www.docker.com/products/docker-desktop/) dan [Docker Compose](https://docs.docker.com/compose/install/) udah terpasang di komputer kamu.
 
@@ -67,7 +34,12 @@ git clone https://github.com/rizkirmdhnnn/wleowleo.git
 cd wleowleo
 ```
 
-3. Bikin file `.env` (lihat bagian "Setting Konfigurasi" di bawah).
+3. Bikin file `.env` (lihat bagian "Konfigurasi" di bawah):
+
+```bash
+cp .env.example .env
+# Edit file .env sesuai kebutuhan
+```
 
 4. Bikin folder `output` dan `temp` (kalo belum ada):
 
@@ -75,7 +47,7 @@ cd wleowleo
 mkdir -p output temp
 ```
 
-#### Cara Jalanin
+### Cara Jalanin
 
 **Pake Docker Compose (Direkomendasikan):**
 
@@ -89,62 +61,64 @@ Atau kalo mau jalanin di background:
 docker compose up -d
 ```
 
-**Pake Docker Langsung:**
-
-```bash
-# Build image dulu
-docker build -t wleowleo .
-
-# Jalanin container
-docker run --rm -v "$(pwd)/output:/app/output" -v "$(pwd)/temp:/app/temp" -v "$(pwd)/.env:/app/.env:ro" wleowleo
-```
-
 Semua hasil scraping dan video bakal disimpen di folder `output` di komputer kamu.
 
-## Setting Konfigurasi
+## Konfigurasi
+
+Proyek ini menggunakan file konfigurasi terpusat (`.env`) yang terletak di root project. File ini berisi semua variabel lingkungan yang dibutuhkan oleh kedua service (scraper dan downloader).
 
 Bikin file `.env` di folder utama. Contek aja dari `.env.example` yang udah ada:
 
 ```
-# Mau download video otomatis? (true/false)
-AUTO_DOWNLOAD = true
+# RabbitMQ Configuration
+RABBITMQ_HOST=rabbitmq
+RABBITMQ_PORT=5672
+RABBITMQ_USER=guest
+RABBITMQ_PASSWORD=guest
+RABBITMQ_QUEUE=video_queue
 
-# URL website target
-BASE_URL = "dosa gaboleh tau"
+# Scraper Configuration
+BASE_URL="" #berdosa loh gaboleh
+USERAGENT="Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
+PAGES=1
+AUTO_DOWNLOAD=true
+LIMIT_CONCURRENT=10
 
-# User agent buat ngehindarin Cloudflare
-USERAGENT = "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
-
-# Mau scrape berapa halaman?
-PAGES = "1"
+# Downloader Configuration
+LIMIT_CONCURRENT_DOWNLOAD=5
 ```
+
+Untuk penjelasan lebih detail tentang konfigurasi, lihat file [CONFIG.md](CONFIG.md).
 
 ## Cara Pake
 
-Jalanin aplikasinya:
+### Menjalankan sebagai Microservices
+
+Cara paling mudah adalah menggunakan Docker Compose:
 
 ```bash
-go run main.go
+docker compose up
 ```
 
-Atau build dulu terus jalanin:
-
-```bash
-go build -o wleowleo
-./wleowleo
-```
+Ini akan menjalankan tiga service:
+1. **RabbitMQ** - Message broker untuk komunikasi antar service
+2. **Scraper** - Service untuk scraping link video
+3. **Downloader** - Service untuk download dan konversi video
 
 ## Gimana Cara Kerjanya?
 
-1. **Persiapan**: Aplikasi bakal muat konfigurasi dari file `.env` dan nyiapin browser Chrome tanpa tampilan.
+1. **Persiapan**: Aplikasi bakal muat konfigurasi dari file `.env` dan nyiapin komponen yang dibutuhkan.
 
-2. **Nyedot Halaman**: Aplikasi bakal ngunjungin beberapa halaman dari URL target dan nyari link ke halaman video.
+2. **Scraper Service**:
+   - Nyiapin browser Chrome tanpa tampilan
+   - Ngunjungin beberapa halaman dari URL target
+   - Nyari link ke halaman video
+   - Nyari URL stream video M3U8 dari setiap halaman
+   - Kirim data video ke RabbitMQ queue
+   - Ekspor semua link yang udah di-scrape ke file JSON
 
-3. **Nyari Link Video**: Buat setiap link halaman, aplikasi bakal buka halaman itu dan nyomot URL stream video M3U8-nya.
-
-4. **Ekspor**: Semua link yang udah di-scrape bakal disimpen ke file JSON di folder `output`.
-
-5. **Download** (kalo diaktifin): Kalo `AUTO_DOWNLOAD` diset `true`, aplikasi bakal download tiap video:
+3. **Downloader Service**:
+   - Terima data video dari RabbitMQ queue
    - Download file playlist M3U8
    - Download semua potongan video
    - Pake FFmpeg buat gabungin jadi satu file MP4 utuh
@@ -152,11 +126,23 @@ go build -o wleowleo
 
 ## Struktur Folder
 
-- `config/`: Buat ngurus konfigurasi
-- `logger/`: Buat nyatet log aktivitas
-- `scraper/`: Inti dari aplikasi buat scraping dan download
-  - `scraper.go`: Nyedot halaman dan link video
-  - `downloader.go`: Download dan konversi video
-  - `export.go`: Ekspor data ke JSON
-- `output/`: Tempat nyimpen video hasil download dan file JSON
-- `temp/`: Folder sementara buat nyimpen potongan video selama proses
+```
+├── CONFIG.md                # Dokumentasi konfigurasi
+├── README.md                # Dokumentasi utama
+├── docker-compose.yaml      # Konfigurasi Docker Compose
+├── .env.example             # Contoh file konfigurasi
+├── downloader/              # Service downloader
+│   ├── Dockerfile           # Dockerfile untuk downloader
+│   ├── config/              # Konfigurasi downloader
+│   ├── logger/              # Logger untuk downloader
+│   ├── message/             # Komunikasi dengan RabbitMQ
+│   ├── scraper/             # Modul download dan konversi video
+│   └── main.go              # Entry point downloader
+├── scraper/                 # Service scraper
+│   ├── Dockerfile           # Dockerfile untuk scraper
+│   ├── config/              # Konfigurasi scraper
+│   ├── logger/              # Logger untuk scraper
+│   ├── message/             # Komunikasi dengan RabbitMQ
+│   ├── scraper/             # Modul scraping dan ekspor data
+│   └── main.go              # Entry point scraper
+```
