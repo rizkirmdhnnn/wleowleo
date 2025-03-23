@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"wleowleo/config"
-
-	"wleowleo/message"
+	"wleowleo-scraper/config"
+	"wleowleo-scraper/message"
 
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"

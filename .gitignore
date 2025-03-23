@@ -1,6 +1,3 @@
-downloader/output/*
-
-downloader/temp/*
-
-scraper/.env
-downloader/.env
+.env
+temp
+output

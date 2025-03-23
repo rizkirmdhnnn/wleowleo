@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"wleowleo/config"
-	"wleowleo/logger"
-	"wleowleo/scraper"
-
-	"wleowleo/message"
+	"wleowleo-scraper/config"
+	"wleowleo-scraper/logger"
+	"wleowleo-scraper/message"
+	"wleowleo-scraper/scraper"
 
 	"github.com/chromedp/chromedp"
 )
