@@ -1,5 +1,3 @@
-output/*
-!output/.gitignore
-temp/*
-!temp/.gitignore
 .env
+temp
+output

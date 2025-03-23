@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"sync"
 
-	"wleowleo/config"
-	"wleowleo/logger"
-	"wleowleo/scraper"
+	"wleowleo-scraper/config"
+	"wleowleo-scraper/logger"
+	"wleowleo-scraper/message"
+	"wleowleo-scraper/scraper"
 
 	"github.com/chromedp/chromedp"
 )
@@ -18,6 +18,9 @@ func main() {
 
 	// Initialize logrus
 	log := logger.NewLogger(cfg)
+
+	// Initialize rabbitmq consumer
+	consumer := message.NewProducer(cfg, log)
 
 	// Create context with cancellation for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -35,7 +38,7 @@ func main() {
 	defer browserCancel()
 
 	// Initialize scraper
-	scrpr := scraper.New(cfg, log)
+	scrpr := scraper.New(cfg, log, consumer)
 
 	// Scrape pages
 	// log.Info.Println("Starting page scraping...")
@@ -51,45 +54,33 @@ func main() {
 	scrpr.ScrapeVideo(allocCtx, links)
 
 	// Export results to file
-	result, err := scrpr.ExportLinks(links, "output")
-	if err != nil {
-		log.Error("Error exporting links:", err)
-	} else {
-		log.Info("Video links saved to", result)
-	}
+	// result, err := scrpr.ExportLinks(links, "output")
+	// if err != nil {
+	// 	log.Error("Error exporting links:", err)
+	// } else {
+	// 	log.Info("Video links saved to", result)
+	// }
 
 	// Download videos if enabled
 	if cfg.AutoDownload {
-		// log.Info.Println("Starting video download in parallel (limited to 5 concurrent downloads)...")
-		log.Info("Starting video download in parallel (limited to 5 concurrent downloads)...")
-		var wg sync.WaitGroup
-
-		// Create a semaphore with buffer size 5 to limit concurrent downloads
-		semaphore := make(chan struct{}, cfg.LimitConcurrent)
-
 		for _, link := range *links {
-			wg.Add(1)
-			go func(data scraper.PageLink) {
-				// Acquire semaphore
-				semaphore <- struct{}{}
-				defer func() {
-					// Release semaphore when done
-					<-semaphore
-					wg.Done()
-				}()
+			if link.M3U8 == "" {
+				log.Warning("Skipping download for empty URL")
+				continue
+			}
 
-				if data.Link == "" {
-					log.Warning("Skipping download for empty URL")
-					return
-				}
-				scrpr.DownloadVideo(data)
-			}(link)
+			// Produce message
+			msg := message.NewMessage(link.Title, link.Link, link.M3U8)
+
+			log.Info("Producing message:", msg)
+			log.Info(consumer)
+
+			consumer.Produce(msg)
+			// err := scrpr.DownloadVideo(link)
+			if err != nil {
+				log.Error("Error downloading video:", err)
+			}
 		}
-
-		// Wait for all downloads to complete
-		wg.Wait()
-		// log.Info.Println("All video downloads completed")
-		log.Info("All video downloads completed")
 	}
 
 	// Print results

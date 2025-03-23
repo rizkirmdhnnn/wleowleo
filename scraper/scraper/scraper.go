@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"wleowleo/config"
+	"wleowleo-scraper/config"
+	"wleowleo-scraper/message"
 
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
@@ -21,14 +21,16 @@ type PageLink struct {
 }
 
 type Scraper struct {
-	Config *config.Config
-	Log    *logrus.Logger
+	Config  *config.Config
+	Log     *logrus.Logger
+	Message *message.Producer
 }
 
-func New(cfg *config.Config, log *logrus.Logger) *Scraper {
+func New(cfg *config.Config, log *logrus.Logger, msg *message.Producer) *Scraper {
 	return &Scraper{
-		Config: cfg,
-		Log:    log,
+		Config:  cfg,
+		Log:     log,
+		Message: msg,
 	}
 }
 
@@ -72,6 +74,7 @@ func (s *Scraper) ScrapePage(ctx context.Context, totalPage int) (*[]PageLink, e
 
 func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 	currentURL := ""
+	title := ""
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
 
@@ -84,6 +87,8 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 				s.Log.WithFields(logrus.Fields{
 					"url": e.Request.URL,
 				}).Info("Successfully found video link")
+
+				s.Message.Produce(message.NewMessage(title, currentURL, e.Request.URL))
 
 				for i, link := range *linkpage {
 					if link.Link == currentURL {
@@ -100,6 +105,7 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 
 	for _, link := range *linkpage {
 		currentURL = link.Link
+		title = link.Title
 		s.Log.WithFields(logrus.Fields{
 			"title": link.Title,
 			"link":  link.Link,

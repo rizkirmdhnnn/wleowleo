@@ -1,7 +1,7 @@
 package logger
 
 import (
-	"wleowleo/config"
+	"wleowleo-downloader/config"
 
 	"github.com/sirupsen/logrus"
 )

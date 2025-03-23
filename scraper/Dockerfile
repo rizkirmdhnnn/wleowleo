@@ -22,7 +22,6 @@ WORKDIR /app
 # Install Chrome and FFmpeg
 RUN apk add --no-cache \
     chromium \
-    ffmpeg \
     ca-certificates \
     tzdata
 
