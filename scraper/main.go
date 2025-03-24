@@ -20,7 +20,10 @@ func main() {
 	log := logger.NewLogger(cfg)
 
 	// Initialize rabbitmq consumer
-	consumer := message.NewProducer(cfg, log)
+	producer := message.NewProducer(cfg, log)
+	if err := producer.Initialize(); err != nil {
+		log.Error("Error initializing producer:", err)
+	}
 
 	// Create context with cancellation for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,7 +41,7 @@ func main() {
 	defer browserCancel()
 
 	// Initialize scraper
-	scrpr := scraper.New(cfg, log, consumer)
+	scrpr := scraper.New(cfg, log, producer)
 
 	// Scrape pages
 	// log.Info.Println("Starting page scraping...")
@@ -72,10 +75,7 @@ func main() {
 			// Produce message
 			msg := message.NewMessage(link.Title, link.Link, link.M3U8)
 
-			log.Info("Producing message:", msg)
-			log.Info(consumer)
-
-			consumer.Produce(msg)
+			producer.Produce(msg)
 			// err := scrpr.DownloadVideo(link)
 			if err != nil {
 				log.Error("Error downloading video:", err)
