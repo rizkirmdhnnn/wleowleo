@@ -29,8 +29,6 @@ RUN apk add --no-cache \
 ENV CHROME_BIN=/usr/bin/chromium-browser \
     CHROME_PATH=/usr/lib/chromium/
 
-# Create directories for output and temp files
-RUN mkdir -p /app/output /app/temp
 
 # Copy binary from builder stage
 COPY --from=builder /app/wleowleo /app/

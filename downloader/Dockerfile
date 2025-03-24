@@ -26,7 +26,7 @@ RUN apk add --no-cache \
     tzdata
 
 # Create directories for output and temp files
-RUN mkdir -p /app/output /app/temp
+RUN mkdir -p /app/output /app/temp && chmod -R 777 /app/output /app/temp
 
 # Create a non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
