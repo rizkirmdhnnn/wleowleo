@@ -25,14 +25,11 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata
 
-# Create directories for output and temp files with proper permissions
-RUN mkdir -p /app/output /app/temp
+# Create directories for output and temp 
+RUN mkdir -p /app/output /app/temp 
 
 # Copy binary from builder stage
 COPY --from=builder /app/wleowleo-downloader /app/
-
-# Switch to non-root user
-USER appuser
 
 # Set the entrypoint
 ENTRYPOINT ["/app/wleowleo-downloader"]

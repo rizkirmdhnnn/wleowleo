@@ -67,7 +67,6 @@ services:
       - RABBITMQ_USER=guest
       - RABBITMQ_PASSWORD=guest
       - RABBITMQ_QUEUE=video_queue
-      - LIMIT_CONCURRENT_DOWNLOAD=5
     depends_on:
       rabbitmq:
         condition: service_healthy
