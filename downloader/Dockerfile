@@ -26,7 +26,8 @@ RUN apk add --no-cache \
     tzdata
 
 # Create directories for output and temp 
-RUN mkdir -p /app/output /app/temp 
+RUN mkdir -p /app/output /app/temp  && \
+    chmod 755 /app/output /app/temp
 
 # Copy binary from builder stage
 COPY --from=builder /app/wleowleo-downloader /app/

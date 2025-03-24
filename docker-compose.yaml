@@ -26,10 +26,6 @@ services:
       dockerfile: Dockerfile
     container_name: wleowleo-scraper
     volumes:
-      # Mount output directory to save scraped data
-      - ./output:/app/output
-      # Mount temp directory for temporary files during processing
-      - ./temp:/app/temp
       # Mount .env file for configuration
       - ./.env:/app/.env:ro
     environment:
