@@ -79,6 +79,10 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 	defer cancel()
 
 	foundLink := make(chan bool, 1)
+	// Maximum number of retries for each link
+	maxRetries := 3
+	// Delay between retries in seconds
+	retryDelay := 2
 
 	// Listen for network events
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
@@ -111,6 +115,10 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 		}
 	})
 
+	// Create a slice to store links that failed to get m3u8
+	var failedLinks []PageLink
+
+	// First pass: try to scrape all links
 	for _, link := range *linkpage {
 		currentURL = link.Link
 		title = link.Title
@@ -119,6 +127,7 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 			"link":  link.Link,
 		}).Debug("Scraping video link")
 
+		// Clear the channel before each attempt
 		select {
 		case <-foundLink:
 		default:
@@ -141,10 +150,143 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 			}
 		}(currentURL)
 
+		// Wait for either the link to be found or timeout
+		var linkFound bool
 		select {
 		case <-foundLink:
+			linkFound = true
 		case <-time.After(time.Duration(10) * time.Second):
-			s.Log.Warning("Timeout for ", currentURL, ", continuing to next URL")
+			s.Log.Warning("Timeout for ", currentURL, ", will retry later")
+			linkFound = false
+		}
+
+		// If link was not found, add to failed links for retry
+		if !linkFound {
+			failedLinks = append(failedLinks, link)
+		}
+	}
+
+	// Retry failed links
+	if len(failedLinks) > 0 {
+		s.Log.WithFields(logrus.Fields{
+			"count": len(failedLinks),
+		}).Info("Retrying failed links")
+
+		for retry := 0; retry < maxRetries; retry++ {
+			if len(failedLinks) == 0 {
+				break // All links have been successfully processed
+			}
+
+			s.Log.WithFields(logrus.Fields{
+				"attempt": retry + 1,
+				"count":   len(failedLinks),
+			}).Info("Retry attempt")
+
+			// Wait before retrying
+			time.Sleep(time.Duration(retryDelay) * time.Second)
+
+			// Create a new slice for links that still fail
+			var stillFailedLinks []PageLink
+
+			// Try each failed link again
+			for _, link := range failedLinks {
+				currentURL = link.Link
+				title = link.Title
+				s.Log.WithFields(logrus.Fields{
+					"title":   link.Title,
+					"link":    link.Link,
+					"attempt": retry + 1,
+				}).Debug("Retrying video link")
+
+				// Clear the channel before each attempt
+				select {
+				case <-foundLink:
+				default:
+				}
+
+				go func(url string) {
+					err := chromedp.Run(ctx,
+						network.Enable(),
+						network.SetBlockedURLs([]string{"*.png", "*.jpg", "*.jpeg", "*.gif"}),
+						chromedp.Navigate(url),
+					)
+					if err != nil {
+						s.Log.WithFields(logrus.Fields{
+							"error":   err,
+							"title":   link.Title,
+							"link":    link.Link,
+							"attempt": retry + 1,
+						}).Error("Retrying video link failed")
+						foundLink <- true
+						return
+					}
+				}(currentURL)
+
+				// Wait for either the link to be found or timeout
+				var linkFound bool
+				select {
+				case <-foundLink:
+					linkFound = true
+				case <-time.After(time.Duration(10) * time.Second):
+					s.Log.WithFields(logrus.Fields{
+						"title":   link.Title,
+						"attempt": retry + 1,
+					}).Warning("Retry timeout")
+					linkFound = false
+				}
+
+				// If link still not found, add to still failed links
+				if !linkFound {
+					stillFailedLinks = append(stillFailedLinks, link)
+				} else {
+					// Check if the link was actually updated with m3u8
+					var linkUpdated bool
+					for _, updatedLink := range *linkpage {
+						if updatedLink.Link == link.Link && updatedLink.M3U8 != "" {
+							linkUpdated = true
+							break
+						}
+					}
+
+					if !linkUpdated {
+						s.Log.WithFields(logrus.Fields{
+							"title":   link.Title,
+							"attempt": retry + 1,
+						}).Warning("Link found but m3u8 not updated, adding to retry list")
+						stillFailedLinks = append(stillFailedLinks, link)
+					}
+				}
+			}
+
+			// Update the failed links for next retry
+			failedLinks = stillFailedLinks
+
+			// Log the progress
+			s.Log.WithFields(logrus.Fields{
+				"attempt":      retry + 1,
+				"still_failed": len(failedLinks),
+			}).Info("Retry attempt completed")
+		}
+
+		// Log final results
+		if len(failedLinks) > 0 {
+			s.Log.WithFields(logrus.Fields{
+				"count": len(failedLinks),
+			}).Warning("Some links could not be processed after all retries")
+
+			// Update the original links that still failed with empty m3u8
+			for _, failedLink := range failedLinks {
+				for _, link := range *linkpage {
+					if link.Link == failedLink.Link {
+						// Keep M3U8 empty to indicate failure
+						s.Log.WithFields(logrus.Fields{
+							"title": link.Title,
+						}).Warning("Failed to get m3u8 link after all retries")
+					}
+				}
+			}
+		} else {
+			s.Log.Info("All links successfully processed after retries")
 		}
 	}
 
