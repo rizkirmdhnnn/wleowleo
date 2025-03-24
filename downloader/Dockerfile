@@ -25,12 +25,13 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata
 
-# Create directories for output and temp files
-RUN mkdir -p /app/output /app/temp && chmod -R 777 /app/output /app/temp
-
 # Create a non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-RUN chown -R appuser:appgroup /app
+
+# Create directories for output and temp files with proper permissions
+RUN mkdir -p /app/output /app/temp && \
+    chmod -R 777 /app/output /app/temp && \
+    chown -R appuser:appgroup /app
 
 # Copy binary from builder stage
 COPY --from=builder /app/wleowleo-downloader /app/
