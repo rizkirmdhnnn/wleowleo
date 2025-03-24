@@ -61,7 +61,12 @@ func (s *Scraper) DownloadVideo(link PageLink) {
 
 // Convert .ts files to .mp4
 func (s *Scraper) convertTStoMP4(foldername string, tsFiles []string) error {
-	// Create list file to concatenate .ts files
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll("output", 0755); err != nil {
+		s.Log.Error("Error creating output directory:", err)
+		return fmt.Errorf("error creating output directory: %v", err)
+	}
+
 	listFileName := filepath.Join("temp", foldername, fmt.Sprintf("%s.txt", foldername))
 	listFile, err := os.Create(listFileName)
 	if err != nil {
@@ -143,12 +148,23 @@ func (s *Scraper) processM3U8File(m3u8URL string) error {
 		return fmt.Errorf("error finding m3u8 file name")
 	}
 
-	// Create base folder
-	if err := os.MkdirAll(filepath.Join("temp", link[1]), 0755); err != nil {
+	basefolder := filepath.Join("temp", link[1])
+	success := false
+
+	// Setup cleanup
+	defer func() {
+		if !success {
+			if err := os.RemoveAll(basefolder); err != nil {
+				s.Log.Warn("Failed to cleanup temporary files:", err)
+			}
+		}
+	}()
+
+	// Create base folder (hanya sekali)
+	if err := os.MkdirAll(basefolder, 0755); err != nil {
 		s.Log.Error("Error creating temp directory:", err)
 		return fmt.Errorf("error creating temp directory: %v", err)
 	}
-	basefolder := filepath.Join("temp", link[1])
 
 	// Download M3U8 file
 	fileName := filepath.Join(basefolder, fmt.Sprintf("%s.m3u8", link[1]))
@@ -178,7 +194,7 @@ func (s *Scraper) processM3U8File(m3u8URL string) error {
 	var downloadErr error
 
 	// Number of worker goroutines
-	numWorkers := 5
+	numWorkers := 10
 	if len(matches) < numWorkers {
 		numWorkers = len(matches)
 	}
@@ -245,7 +261,7 @@ func (s *Scraper) processM3U8File(m3u8URL string) error {
 		return err
 	}
 
-	s.Log.Info("Conversion completed")
-	os.RemoveAll(basefolder)
-	return nil
+	success = true
+
+	return err
 }

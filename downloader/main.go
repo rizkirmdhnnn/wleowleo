@@ -19,6 +19,9 @@ func main() {
 
 	// Initialize rabbitmq consumer
 	consumer := message.NewConsumer(cfg, downloader, log)
+	if err := consumer.Initialize(); err != nil {
+		log.Error("Error initializing consumer:", err)
+	}
 
 	// Listen for messages
 	log.Info("Listening for messages...")
