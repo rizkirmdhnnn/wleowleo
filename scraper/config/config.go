@@ -11,8 +11,10 @@ import (
 type Config struct {
 	BaseURL      string
 	UserAgent    string
-	Pages        int
+	FromPages    int
+	ToPages      int
 	AutoDownload bool
+	LogLevel     int
 
 	// RabbitMQ
 	RabbitMQHost     string
@@ -32,7 +34,8 @@ func LoadConfig() *Config {
 	// Get environment variables
 	baseURL := os.Getenv("BASE_URL")
 	userAgent := os.Getenv("USERAGENT")
-	pages := os.Getenv("PAGES")
+	fromPages := os.Getenv("FROM_PAGES")
+	toPages := os.Getenv("TO_PAGES")
 
 	// Check if required environment variables are set
 	if baseURL == "" {
@@ -41,12 +44,19 @@ func LoadConfig() *Config {
 	if userAgent == "" {
 		log.Panic("USER_AGENT is required")
 	}
-	if pages == "" {
-		log.Panic("PAGES is required")
+	if fromPages == "" {
+		log.Panic("FROM_PAGES is required")
+	}
+	if toPages == "" {
+		log.Panic("TO_PAGES is required")
 	}
 
 	// Convert PAGES to integer
-	pageInt, err := strconv.Atoi(pages)
+	fromPagesInt, err := strconv.Atoi(fromPages)
+	if err != nil {
+		log.Panic("Error converting PAGES to integer:", err)
+	}
+	toPagesInt, err := strconv.Atoi(toPages)
 	if err != nil {
 		log.Panic("Error converting PAGES to integer:", err)
 	}
@@ -56,10 +66,17 @@ func LoadConfig() *Config {
 		log.Panic("RABBITMQ_PORT is required")
 	}
 
+	logLevel, err := strconv.Atoi(os.Getenv("LOG_LEVEL"))
+	if err != nil {
+		logLevel = 4 // default to Info level
+	}
+
 	return &Config{
 		BaseURL:   baseURL,
 		UserAgent: userAgent,
-		Pages:     pageInt,
+		FromPages: fromPagesInt,
+		ToPages:   toPagesInt,
+		LogLevel:  logLevel,
 
 		RabbitMQHost:     os.Getenv("RABBITMQ_HOST"),
 		RabbitMQPort:     rabbitMQPort,

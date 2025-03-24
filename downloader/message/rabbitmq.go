@@ -80,6 +80,7 @@ func (c *Consumer) Cleanup() {
 // Listen listens for messages on the RabbitMQ queue
 func (c *Consumer) Listen() error {
 	if c.conn == nil || c.channel == nil {
+		c.log.Error("Connection not initialized")
 		return fmt.Errorf("connection not initialized")
 	}
 
@@ -87,7 +88,7 @@ func (c *Consumer) Listen() error {
 	msgs, err := c.channel.Consume(
 		c.cfg.RabbitMQQueue, // queue
 		"",                  // consumer
-		true,                // auto-ack
+		false,               // auto-ack
 		false,               // exclusive
 		false,               // no-local
 		false,               // no-wait
@@ -107,7 +108,7 @@ func (c *Consumer) Listen() error {
 	c.log.WithField("concurrent_limit", maxConcurrent).Info("Starting download worker pool")
 
 	semaphore := make(chan struct{}, maxConcurrent)
-	jobCh := make(chan scraper.PageLink)
+	jobCh := make(chan MessageJob)
 	var wg sync.WaitGroup
 
 	// Start workers
@@ -119,13 +120,17 @@ func (c *Consumer) Listen() error {
 	// Process messages
 	go func() {
 		for msg := range msgs {
-			var message scraper.PageLink
-			if err := json.Unmarshal(msg.Body, &message); err != nil {
+			var pageLink scraper.PageLink
+			if err := json.Unmarshal(msg.Body, &pageLink); err != nil {
 				c.log.WithError(err).Error("Error unmarshalling message")
+				msg.Nack(false, true) // Reject message dan requeue
 				continue
 			}
-			c.log.WithField("message", message).Info("Received message")
-			jobCh <- message
+			c.log.WithField("message", pageLink).Debug("Received message")
+			jobCh <- MessageJob{
+				Delivery: msg,
+				PageLink: pageLink,
+			}
 		}
 		close(jobCh)
 	}()
@@ -134,8 +139,14 @@ func (c *Consumer) Listen() error {
 	return nil
 }
 
+// MessageJob represents a job to be processed by a worker
+type MessageJob struct {
+	Delivery amqp.Delivery
+	PageLink scraper.PageLink
+}
+
 // worker handles download jobs
-func (c *Consumer) worker(id int, wg *sync.WaitGroup, jobs <-chan scraper.PageLink, sem chan struct{}) {
+func (c *Consumer) worker(id int, wg *sync.WaitGroup, jobs <-chan MessageJob, sem chan struct{}) {
 	defer wg.Done()
 	c.log.WithField("worker_id", id).Info("Starting download worker")
 
@@ -144,10 +155,20 @@ func (c *Consumer) worker(id int, wg *sync.WaitGroup, jobs <-chan scraper.PageLi
 
 		c.log.WithFields(logrus.Fields{
 			"worker_id": id,
-			"title":     job.Title,
+			"title":     job.PageLink.Title,
 		}).Info("Worker processing download")
 
-		c.downloader.DownloadVideo(job)
+		if err := c.downloader.DownloadVideo(job.PageLink); err != nil {
+			c.log.WithError(err).Error("Error downloading video")
+			job.Delivery.Nack(false, true) // Reject message dan requeue
+		} else {
+			job.Delivery.Ack(false)
+		}
+
+		c.log.WithFields(logrus.Fields{
+			"worker_id": id,
+			"title":     job.PageLink.Title,
+		}).Info("Worker finished download")
 
 		<-sem // Release semaphore
 	}

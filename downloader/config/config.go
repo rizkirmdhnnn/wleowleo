@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	LimitConcurrentDownload int
+	LogLevel                int
 
 	// RabbitMQ
 	RabbitMQHost     string
@@ -35,8 +36,14 @@ func LoadConfig() *Config {
 		log.Panic("RABBITMQ_PORT is required")
 	}
 
+	logLevel, err := strconv.Atoi(os.Getenv("LOG_LEVEL"))
+	if err != nil {
+		logLevel = 4 // default to Info level
+	}
+
 	cfg := &Config{
 		LimitConcurrentDownload: limitConcurrentDownload,
+		LogLevel:                logLevel,
 		RabbitMQHost:            os.Getenv("RABBITMQ_HOST"),
 		RabbitMQPort:            rabbitMQPort,
 		RabbitMQUser:            os.Getenv("RABBITMQ_USER"),

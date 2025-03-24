@@ -22,7 +22,7 @@ func main() {
 	// Initialize rabbitmq consumer
 	producer := message.NewProducer(cfg, log)
 	if err := producer.Initialize(); err != nil {
-		log.Error("Error initializing producer:", err)
+		log.WithError(err).Fatal("Error initializing producer")
 	}
 
 	// Create context with cancellation for graceful shutdown
@@ -31,6 +31,7 @@ func main() {
 	// Setup ChromeDP
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserAgent(cfg.UserAgent),
+		// chromedp.Flag("headless", false),
 	)
 
 	// Create browser context
@@ -46,15 +47,17 @@ func main() {
 	// Scrape pages
 	// log.Info.Println("Starting page scraping...")
 	log.Info("Starting page scraping...")
-	links, err := scrpr.ScrapePage(browserCtx, cfg.Pages)
+	links, err := scrpr.ScrapePage(browserCtx, cfg.FromPages, cfg.ToPages)
 	if err != nil {
-		log.Error("Error scraping pages:", err)
+		log.WithError(err).Fatal("Error scraping pages")
 	}
 
 	// Scrape video links
 	// log.Info.Println("Starting video link extraction...")
 	log.Info("Starting video link extraction...")
-	scrpr.ScrapeVideo(allocCtx, links)
+	if err := scrpr.ScrapeVideo(allocCtx, links); err != nil {
+		log.WithError(err).Fatal("Error scraping video links")
+	}
 
 	// Export results to file
 	// result, err := scrpr.ExportLinks(links, "output")
@@ -72,23 +75,16 @@ func main() {
 				continue
 			}
 
-			// Produce message
-			msg := message.NewMessage(link.Title, link.Link, link.M3U8)
-
-			producer.Produce(msg)
-			// err := scrpr.DownloadVideo(link)
-			if err != nil {
-				log.Error("Error downloading video:", err)
+			// Send message to RabbitMQ
+			if err := producer.Produce(message.NewMessage(link.Title, link.Link, link.M3U8)); err != nil {
+				log.WithError(err).Error("Error producing message")
 			}
 		}
 	}
 
 	// Print results
-	fmt.Println("Scraped Links:")
+	log.Info("All pages processed and video links saved.")
 	for _, link := range *links {
 		fmt.Printf("Title: %s\nPage: %s\nVideo: %s\n\n", link.Title, link.Link, link.M3U8)
 	}
-
-	// log.Info.Println("All pages processed and video links saved.")
-	log.Info("All pages processed and video links saved.")
 }

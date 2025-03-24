@@ -34,12 +34,12 @@ func New(cfg *config.Config, log *logrus.Logger, msg *message.Producer) *Scraper
 	}
 }
 
-func (s *Scraper) ScrapePage(ctx context.Context, totalPage int) (*[]PageLink, error) {
+func (s *Scraper) ScrapePage(ctx context.Context, fromPage, toPage int) (*[]PageLink, error) {
 	var pageLinks []string
 	var pageTitles []string
 	var links []PageLink
 
-	for i := 1; i <= totalPage; i++ {
+	for i := fromPage; i <= toPage; i++ {
 		url := fmt.Sprintf("%s/page-%d", s.Config.BaseURL, i)
 		s.Log.Info("Scraping page: ", url)
 
@@ -72,7 +72,7 @@ func (s *Scraper) ScrapePage(ctx context.Context, totalPage int) (*[]PageLink, e
 	return &links, nil
 }
 
-func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
+func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) error {
 	currentURL := ""
 	title := ""
 	ctx, cancel := chromedp.NewContext(allocCtx)
@@ -80,21 +80,29 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 
 	foundLink := make(chan bool, 1)
 
+	// Listen for network events
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
 		switch e := ev.(type) {
 		case *network.EventRequestWillBeSent:
 			if strings.Contains(e.Request.URL, ".m3u8") {
 				s.Log.WithFields(logrus.Fields{
-					"url": e.Request.URL,
+					"url":   e.Request.URL,
+					"title": title,
 				}).Info("Successfully found video link")
 
-				s.Message.Produce(message.NewMessage(title, currentURL, e.Request.URL))
+				// Produce message
+				if err := s.Message.Produce(message.NewMessage(title, currentURL, e.Request.URL)); err != nil {
+					s.Log.Error("Error producing message: ", err)
+				}
 
+				// Update m3u8 link
 				for i, link := range *linkpage {
 					if link.Link == currentURL {
 						(*linkpage)[i].M3U8 = e.Request.URL
 					}
 				}
+
+				// Send signal
 				select {
 				case foundLink <- true:
 				default:
@@ -109,7 +117,7 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 		s.Log.WithFields(logrus.Fields{
 			"title": link.Title,
 			"link":  link.Link,
-		}).Info("Scraping video link")
+		}).Debug("Scraping video link")
 
 		select {
 		case <-foundLink:
@@ -136,8 +144,9 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) {
 		select {
 		case <-foundLink:
 		case <-time.After(time.Duration(10) * time.Second):
-			// log.Printf("Timeout for %s, continuing to next URL", currentURL)
 			s.Log.Warning("Timeout for ", currentURL, ", continuing to next URL")
 		}
 	}
+
+	return nil
 }

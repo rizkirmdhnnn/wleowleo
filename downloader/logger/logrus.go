@@ -9,7 +9,7 @@ import (
 func NewLogger(cfg *config.Config) *logrus.Logger {
 	log := logrus.New()
 
-	// log.SetLevel(logrus.Level()
+	log.SetLevel(logrus.Level(cfg.LogLevel))
 	log.SetFormatter(&logrus.TextFormatter{
 		// DisableColors: true,
 		FullTimestamp: true,
