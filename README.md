@@ -11,11 +11,12 @@
 ## Fitur Keren
 
 - Web scraping pake browser headless (browser tanpa tampilan) dengan ChromeDP
-- Nyedot link video dari halaman web secara otomatis
-- Download video langsung dalam format MP4
+- Nyedot link video dari halaman web secara otomatis dengan sistem retry
+- Download video langsung dalam format MP4 dengan optimasi multi-worker
 - Simpen semua link yang udah di-scrape ke file JSON
 - Arsitektur microservices dengan RabbitMQ untuk komunikasi antar service
 - Bisa diatur-atur lewat file konfigurasi terpusat
+- Pembersihan otomatis file sementara setelah konversi berhasil
 
 ## Yang Harus Ada
 
@@ -80,9 +81,9 @@ RABBITMQ_QUEUE=video_queue
 # Scraper Configuration
 BASE_URL="" #berdosa loh gaboleh
 USERAGENT="Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
-PAGES=1
-AUTO_DOWNLOAD=true
-LIMIT_CONCURRENT=10
+FROM_PAGES=1
+TO_PAGES=5
+LOG_LEVEL="4"
 
 # Downloader Configuration
 LIMIT_CONCURRENT_DOWNLOAD=5
@@ -111,18 +112,18 @@ Ini akan menjalankan tiga service:
 
 2. **Scraper Service**:
    - Nyiapin browser Chrome tanpa tampilan
-   - Ngunjungin beberapa halaman dari URL target
+   - Ngunjungin beberapa halaman dari URL target (dari halaman FROM_PAGES sampai TO_PAGES)
    - Nyari link ke halaman video
-   - Nyari URL stream video M3U8 dari setiap halaman
+   - Nyari URL stream video M3U8 dari setiap halaman dengan sistem retry otomatis
    - Kirim data video ke RabbitMQ queue
    - Ekspor semua link yang udah di-scrape ke file JSON
 
 3. **Downloader Service**:
    - Terima data video dari RabbitMQ queue
-   - Download file playlist M3U8
-   - Download semua potongan video
+   - Download file playlist M3U8 dengan mekanisme retry
+   - Download semua potongan video secara paralel dengan multi-worker
    - Pake FFmpeg buat gabungin jadi satu file MP4 utuh
-   - Bersihin file-file sementara
+   - Bersihin file-file sementara secara otomatis setelah konversi berhasil
 
 ## Struktur Folder
 
