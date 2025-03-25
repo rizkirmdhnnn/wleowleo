@@ -120,8 +120,9 @@ func (p *Producer) Produce(msg Message) error {
 		false,               // mandatory
 		false,               // immediate
 		amqp.Publishing{
-			ContentType: "application/json",
-			Body:        body,
+			DeliveryMode: amqp.Persistent,
+			ContentType:  "application/json",
+			Body:         body,
 		})
 	if err != nil {
 		p.log.WithError(err).Error("Error publishing message")

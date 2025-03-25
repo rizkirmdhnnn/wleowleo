@@ -64,6 +64,17 @@ func (c *Consumer) Initialize() error {
 		return err
 	}
 
+	// Set QoS
+	err = ch.Qos(
+		c.cfg.LimitConcurrentDownload, // prefetch count
+		0,                             // prefetch size
+		false,                         // global
+	)
+	if err != nil {
+		c.log.WithError(err).Error("Error setting QoS")
+		return err
+	}
+
 	return nil
 }
 
