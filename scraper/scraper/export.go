@@ -5,10 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"wleowleo-scraper/model"
 )
 
 // ExportLinks exports the scraped links to a JSON file
-func (s *Scraper) ExportLinks(links *[]PageLink, outputDir string) (string, error) {
+func (s *Scraper) ExportLinks(links *[]model.PageLink, outputDir string) (string, error) {
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		s.Log.Error("Error creating output directory:", err)

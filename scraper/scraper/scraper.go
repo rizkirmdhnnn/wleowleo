@@ -7,18 +7,13 @@ import (
 	"time"
 	"wleowleo-scraper/config"
 	"wleowleo-scraper/message"
+	"wleowleo-scraper/model"
 
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/sirupsen/logrus"
 )
-
-type PageLink struct {
-	Title string
-	Link  string
-	M3U8  string
-}
 
 type Scraper struct {
 	Config  *config.Config
@@ -34,10 +29,10 @@ func New(cfg *config.Config, log *logrus.Logger, msg *message.Producer) *Scraper
 	}
 }
 
-func (s *Scraper) ScrapePage(ctx context.Context, fromPage, toPage int) (*[]PageLink, error) {
+func (s *Scraper) ScrapePage(ctx context.Context, fromPage, toPage int) (*model.DataPage, error) {
 	var pageLinks []string
 	var pageTitles []string
-	var links []PageLink
+	var links []model.PageLink
 
 	for i := fromPage; i <= toPage; i++ {
 		url := fmt.Sprintf("%s/page-%d", s.Config.BaseURL, i)
@@ -63,18 +58,23 @@ func (s *Scraper) ScrapePage(ctx context.Context, fromPage, toPage int) (*[]Page
 			if j < len(pageTitles) {
 				title = pageTitles[j]
 			}
-			links = append(links, PageLink{title, link, ""})
+			links = append(links, model.PageLink{title, link, ""})
 		}
 	}
 
 	chromedp.Cancel(ctx)
 	s.Log.Info("Scraped ", len(links), " links")
-	return &links, nil
+	return &model.DataPage{
+		Total: len(links),
+		Links: links,
+	}, nil
 }
 
-func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) error {
-	currentURL := ""
-	title := ""
+func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) error {
+	var currentURL string
+	var title string
+	var totalScraped int
+
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
 
@@ -99,10 +99,14 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 					s.Log.Error("Error producing message: ", err)
 				}
 
+				// Increment total scraped
+				totalScraped += 1
+
 				// Update m3u8 link
-				for i, link := range *linkpage {
-					if link.Link == currentURL {
-						(*linkpage)[i].M3U8 = e.Request.URL
+				for i := range data.Links {
+					if data.Links[i].Link == currentURL {
+						data.Links[i].M3U8 = e.Request.URL
+						break
 					}
 				}
 
@@ -116,10 +120,10 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 	})
 
 	// Create a slice to store links that failed to get m3u8
-	var failedLinks []PageLink
+	var failedLinks []model.PageLink
 
 	// First pass: try to scrape all links
-	for _, link := range *linkpage {
+	for _, link := range data.Links {
 		currentURL = link.Link
 		title = link.Title
 		s.Log.WithFields(logrus.Fields{
@@ -186,7 +190,7 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 			time.Sleep(time.Duration(retryDelay) * time.Second)
 
 			// Create a new slice for links that still fail
-			var stillFailedLinks []PageLink
+			var stillFailedLinks []model.PageLink
 
 			// Try each failed link again
 			for _, link := range failedLinks {
@@ -241,7 +245,7 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 				} else {
 					// Check if the link was actually updated with m3u8
 					var linkUpdated bool
-					for _, updatedLink := range *linkpage {
+					for _, updatedLink := range data.Links {
 						if updatedLink.Link == link.Link && updatedLink.M3U8 != "" {
 							linkUpdated = true
 							break
@@ -276,11 +280,11 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 
 			// Update the original links that still failed with empty m3u8
 			for _, failedLink := range failedLinks {
-				for _, link := range *linkpage {
-					if link.Link == failedLink.Link {
+				for i := range data.Links {
+					if data.Links[i].Link == failedLink.Link {
 						// Keep M3U8 empty to indicate failure
 						s.Log.WithFields(logrus.Fields{
-							"title": link.Title,
+							"title": data.Links[i].Title,
 						}).Warning("Failed to get m3u8 link after all retries")
 					}
 				}
@@ -289,6 +293,12 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, linkpage *[]PageLink) er
 			s.Log.Info("All links successfully processed after retries")
 		}
 	}
+
+	// Log final results
+	s.Log.WithFields(logrus.Fields{
+		"total_link":    len(data.Links),
+		"total_scraped": totalScraped,
+	}).Info("Scraped video links")
 
 	return nil
 }

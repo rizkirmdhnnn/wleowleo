@@ -28,6 +28,7 @@ func main() {
 	// Create context with cancellation for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	// Setup ChromeDP
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserAgent(cfg.UserAgent),
@@ -45,7 +46,6 @@ func main() {
 	scrpr := scraper.New(cfg, log, producer)
 
 	// Scrape pages
-	// log.Info.Println("Starting page scraping...")
 	log.Info("Starting page scraping...")
 	links, err := scrpr.ScrapePage(browserCtx, cfg.FromPages, cfg.ToPages)
 	if err != nil {
@@ -53,7 +53,6 @@ func main() {
 	}
 
 	// Scrape video links
-	// log.Info.Println("Starting video link extraction...")
 	log.Info("Starting video link extraction...")
 	if err := scrpr.ScrapeVideo(allocCtx, links); err != nil {
 		log.WithError(err).Fatal("Error scraping video links")
@@ -67,24 +66,8 @@ func main() {
 	// 	log.Info("Video links saved to", result)
 	// }
 
-	// Download videos if enabled
-	if cfg.AutoDownload {
-		for _, link := range *links {
-			if link.M3U8 == "" {
-				log.Warning("Skipping download for empty URL")
-				continue
-			}
-
-			// Send message to RabbitMQ
-			if err := producer.Produce(message.NewMessage(link.Title, link.Link, link.M3U8)); err != nil {
-				log.WithError(err).Error("Error producing message")
-			}
-		}
-	}
-
-	// Print results
 	log.Info("All pages processed and video links saved.")
-	for _, link := range *links {
+	for _, link := range links.Links {
 		fmt.Printf("Title: %s\nPage: %s\nVideo: %s\n\n", link.Title, link.Link, link.M3U8)
 	}
 }
