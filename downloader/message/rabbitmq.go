@@ -53,7 +53,7 @@ func (c *Consumer) Initialize() error {
 	// Declare the queue
 	_, err = ch.QueueDeclare(
 		c.cfg.RabbitMQQueue, // queue name
-		false,               // durable
+		true,                // durable
 		false,               // delete when unused
 		false,               // exclusive
 		false,               // no-wait
