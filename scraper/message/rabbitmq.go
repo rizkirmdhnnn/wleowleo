@@ -72,7 +72,7 @@ func (p *Producer) Initialize() error {
 	// Declare the queue
 	_, err = p.channel.QueueDeclare(
 		p.cfg.RabbitMQQueue, // name
-		false,               // durable
+		true,                // durable
 		false,               // delete when unused
 		false,               // exclusive
 		false,               // no-wait
