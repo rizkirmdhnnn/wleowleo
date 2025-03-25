@@ -14,14 +14,7 @@ func main() {
 	// Initialize logrus
 	log := logger.NewLogger(cfg)
 
-	// Initialize status producer
-	statusProducer := message.NewStatusProducer(cfg, log)
-	if err := statusProducer.Initialize(); err != nil {
-		log.WithError(err).Fatal("Error initializing status producer")
-	}
-	defer statusProducer.Close()
-
-	// Initialize downloader
+	// Initialize scraper
 	downloader := scraper.New(cfg, log)
 
 	// Initialize rabbitmq consumer
