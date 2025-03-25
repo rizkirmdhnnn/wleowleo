@@ -126,9 +126,7 @@ func (s *Scraper) convertTStoMP4(foldername string, tsFiles []string) error {
 // Download file from URL with retry mechanism
 func (s *Scraper) downloadFile(url string, fileName string) error {
 	// Create a custom HTTP client with timeout
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	client := &http.Client{}
 
 	// Maximum number of retries
 	maxRetries := 3
