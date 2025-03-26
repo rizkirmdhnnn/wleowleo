@@ -46,9 +46,9 @@ func GetStatsHandler() gin.HandlerFunc {
 		// In a real implementation, you would get these values from the actual services
 		// For now, we'll use dummy values
 		stats := Stats{
-			TotalPageScraped: 300,
-			TotalScrapedLink: 300,
-			VideoDownloaded:  20,
+			TotalPageScraped: 0,
+			TotalScrapedLink: 0,
+			VideoDownloaded:  0,
 		}
 
 		c.JSON(http.StatusOK, stats)

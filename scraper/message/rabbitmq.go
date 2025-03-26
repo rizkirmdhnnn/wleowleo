@@ -3,53 +3,34 @@ package message
 import (
 	"encoding/json"
 	"fmt"
-	"sync"
 	"wleowleo-scraper/config"
+	"wleowleo-scraper/model"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/sirupsen/logrus"
 )
-
-type Message struct {
-	Title string `json:"title"`
-	URL   string `json:"url"`
-	M3U8  string `json:"m3u8"`
-}
 
 type Producer struct {
 	cfg     *config.Config
 	log     *logrus.Logger
 	conn    *amqp.Connection
 	channel *amqp.Channel
-	mu      sync.Mutex
-	isInit  bool
-}
-
-func NewMessage(title, url, m3u8 string) Message {
-	return Message{
-		Title: title,
-		URL:   url,
-		M3U8:  m3u8,
-	}
+	queues  map[string]string // Map to store queue names and routing keys
 }
 
 func NewProducer(cfg *config.Config, log *logrus.Logger) *Producer {
 	return &Producer{
-		cfg:    cfg,
-		log:    log,
-		isInit: false,
+		cfg: cfg,
+		log: log,
+		queues: map[string]string{
+			"video": "wleo_video_queue",
+			"log":   "wleo_scrap_log",
+		},
 	}
 }
 
 // Initialize creates connection and channel to RabbitMQ
 func (p *Producer) Initialize() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.isInit {
-		return nil
-	}
-
 	var err error
 	// Connect to RabbitMQ
 	p.conn, err = amqp.Dial(fmt.Sprintf("amqp://%s:%s@%s:%d/",
@@ -69,21 +50,43 @@ func (p *Producer) Initialize() error {
 		return err
 	}
 
-	// Declare the queue
-	_, err = p.channel.QueueDeclare(
-		p.cfg.RabbitMQQueue, // name
-		true,                // durable
-		false,               // delete when unused
-		false,               // exclusive
-		false,               // no-wait
-		nil,                 // arguments
-	)
-	if err != nil {
-		p.log.WithError(err).Error("Error declaring queue")
+	// Declare queues
+	if err := p.declareQueues(); err != nil {
 		return err
 	}
 
-	p.isInit = true
+	return nil
+}
+
+// declareQueues declares all required queues
+func (p *Producer) declareQueues() error {
+	// Declare the queue for video messages
+	if err := p.declareQueue("wleo_video_queue"); err != nil {
+		return err
+	}
+
+	// Declare the queue for scrap logs
+	if err := p.declareQueue("wleo_scrap_log"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// declareQueue declares a single queue
+func (p *Producer) declareQueue(name string) error {
+	_, err := p.channel.QueueDeclare(
+		name,  // name
+		true,  // durable
+		false, // delete when unused
+		false, // exclusive
+		false, // no-wait
+		nil,   // arguments
+	)
+	if err != nil {
+		p.log.WithError(err).Errorf("Error declaring queue: %s", name)
+		return err
+	}
 	return nil
 }
 
@@ -95,30 +98,15 @@ func (p *Producer) Close() {
 	if p.conn != nil {
 		p.conn.Close()
 	}
-	p.isInit = false
 }
 
-// Produce sends a message to the RabbitMQ queue
-func (p *Producer) Produce(msg Message) error {
-	if !p.isInit {
-		if err := p.Initialize(); err != nil {
-			return err
-		}
-	}
-
-	// Marshal the message
-	body, err := json.Marshal(msg)
-	if err != nil {
-		p.log.WithError(err).Error("Error marshaling message")
-		return err
-	}
-
-	// Publish the message
-	err = p.channel.Publish(
-		"",                  // exchange
-		p.cfg.RabbitMQQueue, // routing key
-		false,               // mandatory
-		false,               // immediate
+// publish is a generic method to publish messages to RabbitMQ
+func (p *Producer) publish(routingKey string, body []byte) error {
+	err := p.channel.Publish(
+		"",         // exchange
+		routingKey, // routing key
+		false,      // mandatory
+		false,      // immediate
 		amqp.Publishing{
 			DeliveryMode: amqp.Persistent,
 			ContentType:  "application/json",
@@ -128,6 +116,29 @@ func (p *Producer) Produce(msg Message) error {
 		p.log.WithError(err).Error("Error publishing message")
 		return err
 	}
-
 	return nil
+}
+
+// ProduceMsg sends a video link message to the RabbitMQ queue
+func (p *Producer) ProduceMsg(msg model.PageLink) error {
+	// Marshal the message
+	body, err := json.Marshal(msg)
+	if err != nil {
+		p.log.WithError(err).Error("Error marshaling message")
+		return err
+	}
+
+	return p.publish(p.queues["video"], body)
+}
+
+// ProduceLog sends a log message to the RabbitMQ queue
+func (p *Producer) ProduceLog(msg model.ScrapLog) error {
+	// Marshal the message
+	body, err := json.Marshal(msg)
+	if err != nil {
+		p.log.WithError(err).Error("Error marshaling message")
+		return err
+	}
+
+	return p.publish(p.queues["log"], body)
 }

@@ -67,7 +67,7 @@ func main() {
 	// }
 
 	log.Info("All pages processed and video links saved.")
-	for _, link := range links.Links {
-		fmt.Printf("Title: %s\nPage: %s\nVideo: %s\n\n", link.Title, link.Link, link.M3U8)
+	for _, link := range links.Urls {
+		fmt.Printf("Title: %s\nPage: %s\nVideo: %s\n\n", link.Title, link.Url, link.Url)
 	}
 }

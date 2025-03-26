@@ -58,7 +58,7 @@ func (s *Scraper) ScrapePage(ctx context.Context, fromPage, toPage int) (*model.
 			if j < len(pageTitles) {
 				title = pageTitles[j]
 			}
-			links = append(links, model.PageLink{title, link, ""})
+			links = append(links, model.PageLink{Title: title, Url: link, M3u8: ""})
 		}
 	}
 
@@ -66,11 +66,11 @@ func (s *Scraper) ScrapePage(ctx context.Context, fromPage, toPage int) (*model.
 	s.Log.Info("Scraped ", len(links), " links")
 	return &model.DataPage{
 		Total: len(links),
-		Links: links,
+		Urls:  links,
 	}, nil
 }
 
-func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) error {
+func (s *Scraper) ScrapeVideo(allocCtx context.Context, dataModel *model.DataPage) error {
 	var currentURL string
 	var title string
 	var totalScraped int
@@ -94,18 +94,43 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 					"title": title,
 				}).Info("Successfully found video link")
 
-				// Produce message
-				if err := s.Message.Produce(message.NewMessage(title, currentURL, e.Request.URL)); err != nil {
-					s.Log.Error("Error producing message: ", err)
-				}
-
 				// Increment total scraped
 				totalScraped += 1
 
+				// Produce message scraper video queue
+				if err := s.Message.ProduceMsg(model.PageLink{
+					Title: title,
+					Url:   currentURL,
+					M3u8:  e.Request.URL,
+				}); err != nil {
+					s.Log.WithFields(logrus.Fields{
+						"error": err,
+						"title": title,
+						"link":  currentURL,
+					}).Error("Failed to produce message video queue")
+				}
+
+				// Peoduce message scraper log
+				if err := s.Message.ProduceLog(model.ScrapLog{
+					Type:   "scraper_log",
+					Status: "success",
+					Data:   model.PageLink{Title: title, Url: currentURL, M3u8: e.Request.URL},
+					Stats: model.Stats{
+						TotalPageScraped: dataModel.Total,
+						TotalScrapedLink: totalScraped,
+					},
+				}); err != nil {
+					s.Log.WithFields(logrus.Fields{
+						"error": err,
+						"title": title,
+						"link":  currentURL,
+					}).Error("Failed to produce message scraper log")
+				}
+
 				// Update m3u8 link
-				for i := range data.Links {
-					if data.Links[i].Link == currentURL {
-						data.Links[i].M3U8 = e.Request.URL
+				for i := range dataModel.Urls {
+					if dataModel.Urls[i].Url == currentURL {
+						dataModel.Urls[i].M3u8 = e.Request.URL
 						break
 					}
 				}
@@ -123,12 +148,12 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 	var failedLinks []model.PageLink
 
 	// First pass: try to scrape all links
-	for _, link := range data.Links {
-		currentURL = link.Link
-		title = link.Title
+	for _, data := range dataModel.Urls {
+		currentURL = data.Url
+		title = data.Title
 		s.Log.WithFields(logrus.Fields{
-			"title": link.Title,
-			"link":  link.Link,
+			"title": data.Title,
+			"url":   data.Url,
 		}).Debug("Scraping video link")
 
 		// Clear the channel before each attempt
@@ -146,9 +171,28 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 			if err != nil {
 				s.Log.WithFields(logrus.Fields{
 					"error": err,
-					"title": link.Title,
-					"link":  link.Link,
+					"title": data.Title,
+					"url":   data.Url,
 				}).Error("Scraping video link")
+
+				// Peoduce message scraper log
+				if err := s.Message.ProduceLog(model.ScrapLog{
+					Type:   "scraper_log",
+					Status: "error",
+					Error:  err.Error(),
+					Data:   model.PageLink{Title: title, Url: currentURL, M3u8: ""},
+					Stats: model.Stats{
+						TotalPageScraped: dataModel.Total,
+						TotalScrapedLink: totalScraped,
+					},
+				}); err != nil {
+					s.Log.WithFields(logrus.Fields{
+						"error": err,
+						"title": title,
+						"link":  currentURL,
+					}).Error("Failed to produce message scraper log")
+				}
+
 				foundLink <- true
 				return
 			}
@@ -166,7 +210,7 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 
 		// If link was not found, add to failed links for retry
 		if !linkFound {
-			failedLinks = append(failedLinks, link)
+			failedLinks = append(failedLinks, data)
 		}
 	}
 
@@ -193,12 +237,12 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 			var stillFailedLinks []model.PageLink
 
 			// Try each failed link again
-			for _, link := range failedLinks {
-				currentURL = link.Link
-				title = link.Title
+			for _, data := range failedLinks {
+				currentURL = data.Url
+				title = data.Title
 				s.Log.WithFields(logrus.Fields{
-					"title":   link.Title,
-					"link":    link.Link,
+					"title":   data.Title,
+					"url":     data.Url,
 					"attempt": retry + 1,
 				}).Debug("Retrying video link")
 
@@ -217,8 +261,8 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 					if err != nil {
 						s.Log.WithFields(logrus.Fields{
 							"error":   err,
-							"title":   link.Title,
-							"link":    link.Link,
+							"title":   data.Title,
+							"url":     data.Url,
 							"attempt": retry + 1,
 						}).Error("Retrying video link failed")
 						foundLink <- true
@@ -233,7 +277,7 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 					linkFound = true
 				case <-time.After(time.Duration(10) * time.Second):
 					s.Log.WithFields(logrus.Fields{
-						"title":   link.Title,
+						"title":   data.Title,
 						"attempt": retry + 1,
 					}).Warning("Retry timeout")
 					linkFound = false
@@ -241,12 +285,12 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 
 				// If link still not found, add to still failed links
 				if !linkFound {
-					stillFailedLinks = append(stillFailedLinks, link)
+					stillFailedLinks = append(stillFailedLinks, data)
 				} else {
 					// Check if the link was actually updated with m3u8
 					var linkUpdated bool
-					for _, updatedLink := range data.Links {
-						if updatedLink.Link == link.Link && updatedLink.M3U8 != "" {
+					for _, updatedLink := range dataModel.Urls {
+						if updatedLink.Url == data.Url && updatedLink.M3u8 != "" {
 							linkUpdated = true
 							break
 						}
@@ -254,10 +298,10 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 
 					if !linkUpdated {
 						s.Log.WithFields(logrus.Fields{
-							"title":   link.Title,
+							"title":   data.Title,
 							"attempt": retry + 1,
 						}).Warning("Link found but m3u8 not updated, adding to retry list")
-						stillFailedLinks = append(stillFailedLinks, link)
+						stillFailedLinks = append(stillFailedLinks, data)
 					}
 				}
 			}
@@ -280,11 +324,11 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 
 			// Update the original links that still failed with empty m3u8
 			for _, failedLink := range failedLinks {
-				for i := range data.Links {
-					if data.Links[i].Link == failedLink.Link {
+				for i := range dataModel.Urls {
+					if dataModel.Urls[i].Url == failedLink.Url {
 						// Keep M3U8 empty to indicate failure
 						s.Log.WithFields(logrus.Fields{
-							"title": data.Links[i].Title,
+							"title": dataModel.Urls[i].Title,
 						}).Warning("Failed to get m3u8 link after all retries")
 					}
 				}
@@ -296,7 +340,7 @@ func (s *Scraper) ScrapeVideo(allocCtx context.Context, data *model.DataPage) er
 
 	// Log final results
 	s.Log.WithFields(logrus.Fields{
-		"total_link":    len(data.Links),
+		"total_link":    len(dataModel.Urls),
 		"total_scraped": totalScraped,
 	}).Info("Scraped video links")
 

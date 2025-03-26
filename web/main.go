@@ -10,6 +10,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/rizkirmdhn/wleowleo/web/config"
 	"github.com/rizkirmdhn/wleowleo/web/handlers"
+	"github.com/rizkirmdhn/wleowleo/web/message"
 	"github.com/rizkirmdhn/wleowleo/web/websocket"
 )
 
@@ -22,7 +23,6 @@ func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
 
-	_ = cfg
 	// Set up Gin router
 	r := gin.Default()
 
@@ -35,6 +35,20 @@ func main() {
 	// Create websocket hub
 	hub := websocket.NewHub()
 	go hub.Run()
+
+	// Initialize RabbitMQ consumer
+	consumer := message.NewConsumer(cfg, hub)
+	if err := consumer.Initialize(); err != nil {
+		log.Printf("Warning: Failed to initialize RabbitMQ consumer: %v\n", err)
+	} else {
+		if err := consumer.Listen(); err != nil {
+			log.Printf("Warning: Failed to start RabbitMQ consumer: %v\n", err)
+		} else {
+			log.Println("RabbitMQ consumer started successfully")
+			// Cleanup on exit
+			defer consumer.Cleanup()
+		}
+	}
 
 	// Set up routes
 	r.GET("/", handlers.IndexHandler())
