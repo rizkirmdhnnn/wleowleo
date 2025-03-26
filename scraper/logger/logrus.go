@@ -6,6 +6,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// NewLogger creates a new logger
 func NewLogger(cfg *config.Config) *logrus.Logger {
 	log := logrus.New()
 

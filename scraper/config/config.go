@@ -8,6 +8,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// Config represents the configuration for the application
 type Config struct {
 	BaseURL      string
 	UserAgent    string

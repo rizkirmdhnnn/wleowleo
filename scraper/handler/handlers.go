@@ -14,18 +14,21 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// StartRequest represents the request body for starting the scraping process
 type StartRequest struct {
 	FromPages          int `json:"from_pages" binding:"required,min=1"`
 	ToPages            int `json:"to_pages" binding:"required,min=1,gtfield=FromPages"`
 	ConcurrentDownload int `json:"concurrent_download" binding:"required,min=1"`
 }
 
+// Handler represents the handler for the scraping process
 type Handler struct {
 	cfg      *config.Config
 	log      *logrus.Logger
 	producer *message.Producer
 }
 
+// NewHandler creates a new handler for the scraping process
 func NewHandler(cfg *config.Config, log *logrus.Logger, producer *message.Producer) *Handler {
 	return &Handler{
 		cfg:      cfg,
@@ -34,6 +37,7 @@ func NewHandler(cfg *config.Config, log *logrus.Logger, producer *message.Produc
 	}
 }
 
+// Start starts the scraping process
 func (h *Handler) Start() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req StartRequest
@@ -57,12 +61,14 @@ func (h *Handler) Start() gin.HandlerFunc {
 	}
 }
 
+// updateConfig updates the configuration with the request data
 func (h *Handler) updateConfig(req StartRequest) {
 	h.cfg.FromPages = req.FromPages
 	h.cfg.ToPages = req.ToPages
 	h.cfg.ConcurrentDownload = req.ConcurrentDownload
 }
 
+// startScraping starts the scraping process
 func (h *Handler) startScraping() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -78,6 +84,7 @@ func (h *Handler) startScraping() {
 	}
 }
 
+// createChromeContext creates a new context for the Chrome browser
 func (h *Handler) createChromeContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserAgent(h.cfg.UserAgent),
@@ -87,6 +94,7 @@ func (h *Handler) createChromeContext(ctx context.Context) (context.Context, con
 	return chromedp.NewExecAllocator(ctx, opts...)
 }
 
+// runScraping runs the scraping process
 func (h *Handler) runScraping(browserCtx, allocCtx context.Context) error {
 	scrpr := scraper.New(h.cfg, h.log, h.producer)
 
@@ -106,6 +114,7 @@ func (h *Handler) runScraping(browserCtx, allocCtx context.Context) error {
 	return nil
 }
 
+// logScrapedLinks logs the scraped links
 func (h *Handler) logScrapedLinks(links *model.DataPage) {
 	for _, link := range links.Urls {
 		h.log.WithFields(logrus.Fields{

@@ -10,14 +10,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Producer represents a RabbitMQ producer
 type Producer struct {
 	cfg     *config.Config
 	log     *logrus.Logger
 	conn    *amqp.Connection
 	channel *amqp.Channel
-	queues  map[string]string // Map to store queue names and routing keys
+	queues  map[string]string
 }
 
+// NewProducer creates a new RabbitMQ producer
 func NewProducer(cfg *config.Config, log *logrus.Logger) *Producer {
 	return &Producer{
 		cfg: cfg,
