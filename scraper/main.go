@@ -1,15 +1,13 @@
 package main
 
 import (
-	"context"
-	"fmt"
-
+	"net/http"
 	"wleowleo-scraper/config"
+	"wleowleo-scraper/handler"
 	"wleowleo-scraper/logger"
 	"wleowleo-scraper/message"
-	"wleowleo-scraper/scraper"
 
-	"github.com/chromedp/chromedp"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -25,49 +23,29 @@ func main() {
 		log.WithError(err).Fatal("Error initializing producer")
 	}
 
-	// Create context with cancellation for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Initialize Gin router
+	router := gin.Default()
 
-	// Setup ChromeDP
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.UserAgent(cfg.UserAgent),
-		// chromedp.Flag("headless", false),
-	)
+	// Set up CORS middleware
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusOK)
+			return
+		}
+	})
 
-	// Create browser context
-	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, opts...)
-	defer allocCancel()
+	// Register routes
+	handler := handler.NewHandler(cfg, log, producer)
+	router.POST("/api/start", handler.Start())
 
-	browserCtx, browserCancel := chromedp.NewContext(allocCtx)
-	defer browserCancel()
-
-	// Initialize scraper
-	scrpr := scraper.New(cfg, log, producer)
-
-	// Scrape pages
-	log.Info("Starting page scraping...")
-	links, err := scrpr.ScrapePage(browserCtx, cfg.FromPages, cfg.ToPages)
-	if err != nil {
-		log.WithError(err).Fatal("Error scraping pages")
-	}
-
-	// Scrape video links
-	log.Info("Starting video link extraction...")
-	if err := scrpr.ScrapeVideo(allocCtx, links); err != nil {
-		log.WithError(err).Fatal("Error scraping video links")
-	}
-
-	// Export results to file
-	// result, err := scrpr.ExportLinks(links, "output")
-	// if err != nil {
-	// 	log.Error("Error exporting links:", err)
-	// } else {
-	// 	log.Info("Video links saved to", result)
-	// }
-
-	log.Info("All pages processed and video links saved.")
-	for _, link := range links.Urls {
-		fmt.Printf("Title: %s\nPage: %s\nVideo: %s\n\n", link.Title, link.Url, link.Url)
+	// Start the server
+	log.Printf("Server starting on port %s\n", cfg.WebPort)
+	if err := http.ListenAndServe(":"+cfg.WebPort, router); err != nil {
+		log.Fatalf("Failed to start server: %v\n", err)
 	}
 }

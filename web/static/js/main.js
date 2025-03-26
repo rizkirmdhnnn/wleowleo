@@ -58,7 +58,7 @@ document.addEventListener("DOMContentLoaded", function () {
         addScraperLog(
           data.data.title,
           data.data.m3u8 || data.error,
-          data.status,
+          data.status
         );
         updateStats(data.stats);
         break;
@@ -80,7 +80,7 @@ document.addEventListener("DOMContentLoaded", function () {
   socket.onclose = function (event) {
     if (event.wasClean) {
       console.log(
-        `Connection closed cleanly, code=${event.code} reason=${event.reason}`,
+        `Connection closed cleanly, code=${event.code} reason=${event.reason}`
       );
       showToast(`Connection closed: ${event.reason}`, "info");
     } else {
@@ -112,48 +112,58 @@ document.addEventListener("DOMContentLoaded", function () {
             <span>Starting...</span>
         `;
 
-    // First update configuration
-    updateConfig()
-      .then(() => {
-        // Then start scraping
-        return fetch("/api/start", {
-          method: "POST",
-        });
-      })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to start scraping");
-        }
-        return response.json();
-      })
-      .then((data) => {
-        console.log("Scraping started:", data);
-        showToast("Scraping process started successfully", "success");
+    function Start() {
+      const config = {
+        from_pages: parseInt(document.getElementById("from-page").value),
+        to_pages: parseInt(document.getElementById("to-page").value),
+        concurrent_download: parseInt(
+          document.getElementById("concurrent-download").value
+        ),
+      };      
 
-        // Reset button state but with different text
-        startButton.disabled = false;
-        startButton.innerHTML = `
+      fetch("http://localhost:3000/api/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(config),
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Failed to start scraping");
+          }
+          return response.json();
+        })
+        .then((data) => {
+          console.log("Scraping started:", data);
+          showToast("Scraping process started successfully", "success");
+
+          // Reset button state but with different text
+          startButton.disabled = false;
+          startButton.innerHTML = `
                     <i data-feather="refresh-cw"></i>
                     <span>Restart Process</span>
                 `;
-        if (window.feather) {
-          feather.replace();
-        }
-      })
-      .catch((error) => {
-        console.error("Error starting scraping:", error);
-        showToast(`Failed to start scraping: ${error.message}`, "error");
+          if (window.feather) {
+            feather.replace();
+          }
+        })
+        .catch((error) => {
+          console.error("Error starting scraping:", error);
+          showToast(`Failed to start scraping: ${error.message}`, "error");
 
-        // Reset button state
-        startButton.disabled = false;
-        startButton.innerHTML = `
+          // Reset button state
+          startButton.disabled = false;
+          startButton.innerHTML = `
                     <i data-feather="play"></i>
                     <span>Start Process</span>
                 `;
-        if (window.feather) {
-          feather.replace();
-        }
-      });
+          if (window.feather) {
+            feather.replace();
+          }
+        });
+    }
+    Start();
   });
 
   // Functions
@@ -183,7 +193,7 @@ document.addEventListener("DOMContentLoaded", function () {
       from_pages: parseInt(document.getElementById("from-page").value),
       to_pages: parseInt(document.getElementById("to-page").value),
       limit_concurrent_download: parseInt(
-        document.getElementById("concurrent-download").value,
+        document.getElementById("concurrent-download").value
       ),
     };
 
@@ -238,7 +248,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const step = Math.max(
       1,
-      Math.floor(Math.abs(newValue - currentValue) / 20),
+      Math.floor(Math.abs(newValue - currentValue) / 20)
     );
     let current = currentValue;
 

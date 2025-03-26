@@ -22,6 +22,10 @@ type Config struct {
 	RabbitMQUser     string
 	RabbitMQPassword string
 	RabbitMQQueue    string
+
+	// Web server
+	WebPort            string
+	ConcurrentDownload int
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -83,5 +87,7 @@ func LoadConfig() *Config {
 		RabbitMQUser:     os.Getenv("RABBITMQ_USER"),
 		RabbitMQPassword: os.Getenv("RABBITMQ_PASSWORD"),
 		RabbitMQQueue:    os.Getenv("RABBITMQ_QUEUE"),
+
+		WebPort: os.Getenv("WEB_PORT"),
 	}
 }

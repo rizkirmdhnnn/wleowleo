@@ -19,7 +19,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      
+
   web:
     build:
       context: ./web
@@ -52,6 +52,8 @@ services:
     volumes:
       # Mount .env file for configuration
       - ./.env:/app/.env:ro
+    ports:
+      - "3000:3000" # Web UI port
     environment:
       # Set environment variables for Chrome in container
       - DISPLAY=:99

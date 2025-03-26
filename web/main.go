@@ -4,7 +4,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -63,11 +62,6 @@ func main() {
 		api.POST("/start", handlers.StartScrapingHandler(hub))
 		api.POST("/config", handlers.UpdateConfigHandler())
 	}
-
-	// Create necessary directories if they don't exist
-	os.MkdirAll(filepath.Join("static", "css"), 0755)
-	os.MkdirAll(filepath.Join("static", "js"), 0755)
-	os.MkdirAll("templates", 0755)
 
 	// Start server
 	port := os.Getenv("WEB_PORT")
