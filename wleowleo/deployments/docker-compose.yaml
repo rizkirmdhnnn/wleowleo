@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: wleowleo-rabbitmq
+    ports:
+      - "5672:5672" # AMQP protocol port
+      - "15672:15672" # Management UI port
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - wleowleo-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  scraper:
+    build:
+      context: ..
+      dockerfile: deployments/docker/Dockerfile.scraper 
+    container_name: wleowleo-scraper
+    volumes:
+      # Mount .env file for configuration
+      - ./.env:/app/.env:ro
+    ports:
+      - "3000:3000" # Web UI port
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wleowleo-network
+    restart: "no"
+    # Use init to properly handle signals and zombie processes
+    init: true
+
+networks:
+  wleowleo-network:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
