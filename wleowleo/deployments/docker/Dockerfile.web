@@ -12,27 +12,24 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o scraper ./cmd/scraper
+RUN CGO_ENABLED=0 GOOS=linux go build -o panel ./cmd/web
 
 # Create final image
 FROM alpine:latest
 
 WORKDIR /app
 
-# Install Chrome and FFmpeg
 RUN apk add --no-cache \
-    chromium \
     ca-certificates \
     tzdata
 
-# Set Chrome environment variables
-ENV CHROME_BIN=/usr/bin/chromium-browser \
-    CHROME_PATH=/usr/lib/chromium/
-
 # Copy binary from builder stage
-COPY --from=builder /app/scraper /app/
+COPY --from=builder /app/panel /app/
+# Copy templates and static files
+COPY --from=builder /app/internal/web/templates /app/internal/web/templates
+COPY --from=builder /app/internal/web/static /app/internal/web/static
 # Copy config file
 COPY --from=builder /app/config.yaml /app/
 
 # Set the entrypoint
-ENTRYPOINT ["/app/scraper"]
+ENTRYPOINT ["/app/panel"]

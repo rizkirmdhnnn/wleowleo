@@ -1,7 +1,8 @@
 package main
 
 import (
-	"fmt"
+	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rizkirmdhn/wleowleo/internal/common/config"
@@ -51,9 +52,8 @@ func main() {
 	h.RegisterRoutes(r)
 
 	// Start the web server
-	addr := fmt.Sprintf("%s:%d", webCfg.Host, webCfg.Port)
-	log.Infof("Starting web server on %s", addr)
-	if err := r.Run(addr); err != nil {
-		log.Fatalf("Failed to start web server: %v", err)
+	log.Infof("Server starting on port %v\n", webCfg.Port)
+	if err := http.ListenAndServe(":"+strconv.Itoa(webCfg.Port), r); err != nil {
+		log.Fatalf("Failed to start server: %v\n", err)
 	}
 }

@@ -41,7 +41,7 @@ func main() {
 	defer cancel()
 
 	// Create a new Scraper service
-	scraperService := service.NewScraperService(&cfg.Scraper, &cfg.RabbitMq, log, messagingClient)
+	scraperService := service.NewScraperService(&cfg.Scraper, log, messagingClient)
 
 	// Start the service
 	if err := scraperService.Start(); err != nil {

@@ -19,24 +19,38 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
   scraper:
     build:
       context: ..
-      dockerfile: deployments/docker/Dockerfile.scraper 
+      dockerfile: deployments/docker/Dockerfile.scraper
     container_name: wleowleo-scraper
-    volumes:
-      # Mount .env file for configuration
-      - ./.env:/app/.env:ro
-    ports:
-      - "3000:3000" # Web UI port
+    environment:
+      - TZ=Asia/Jakarta
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       rabbitmq:
         condition: service_healthy
     networks:
       - wleowleo-network
-    restart: "no"
-    # Use init to properly handle signals and zombie processes
-    init: true
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: deployments/docker/Dockerfile.web
+    container_name: wleowleo-panel
+    ports:
+      - "8080:8080" # Web UI port
+    environment:
+      - TZ=Asia/Jakarta
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wleowleo-network
+    restart: unless-stopped
 
 networks:
   wleowleo-network:

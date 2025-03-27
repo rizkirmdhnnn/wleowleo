@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -76,6 +77,10 @@ func Load() (*Config, error) {
 	var config Config
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("unable to decode config: %w", err)
+	}
+
+	if envURL := os.Getenv("RABBITMQ_URL"); envURL != "" {
+		config.RabbitMq.URL = envURL
 	}
 
 	return &config, nil
