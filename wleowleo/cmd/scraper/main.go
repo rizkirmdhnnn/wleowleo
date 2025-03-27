@@ -27,6 +27,7 @@ func main() {
 
 	// Print the Scraper configuration
 	log.Infof("Scraper configuration: %+v", scraperCfg)
+	log.Infof("RabbitMQ configuration: %+v", cfg.RabbitMq)
 
 	// Create a new RabbitMQ client
 	messagingClient, err := messaging.NewRabbitMQClient(&cfg.RabbitMq)
@@ -40,7 +41,7 @@ func main() {
 	defer cancel()
 
 	// Create a new Scraper service
-	scraperService := service.NewScraperService(&cfg.Scraper, log, messagingClient)
+	scraperService := service.NewScraperService(&cfg.Scraper, &cfg.RabbitMq, log, messagingClient)
 
 	// Start the service
 	if err := scraperService.Start(); err != nil {
@@ -60,10 +61,8 @@ func main() {
 	// Trigger graceful shutdown
 	cancel()
 
-	// // Call Stop() if your service has such method
-	// if err := scraperService.Stop(); err != nil {
-	// 	log.Errorf("Error stopping scraper service: %v", err)
-	// }
+	// Call Stop() if your service has such method
+	scraperService.Stop()
 
 	log.Info("Scraper service stopped")
 }

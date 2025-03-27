@@ -7,10 +7,11 @@ rabbitmq:
   url: "amqp://guest:guest@localhost:5672/"
   exchange: "wleowleo"
   queue:
-    videoUrls: "video_links"
-    scraperLog: "download_jobs"
+    scraperCommandQueue: "scraper_command"
+    videoLinksQueue: "scraper_video_queue"
+    scraperLogQueue: "scraper_log"
   reconnectRetries: 5
-  reconnectTimeout: 5000 # ms
+  reconnectTimeout: 10000 # ms
 
 scraper:
   host: "berdosa"

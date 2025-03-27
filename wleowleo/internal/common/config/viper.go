@@ -22,15 +22,16 @@ type AppConfig struct {
 	Env      string `yaml:"env"`
 }
 
-type queueNames struct {
-	VideoUrls   string `yaml:"videoUrls"`
-	ScraperLogs string `yaml:"scraperLog"`
+type QueueNames struct {
+	ScraperCommandQueue string `yaml:"scraperCommandQueue"`
+	VideoLinksQueue     string `yaml:"videoLinksQueue"`
+	ScraperLogQueue     string `yaml:"scraperLogQueue"`
 }
 
 type RabbitMQConfig struct {
 	URL              string     `yaml:"url"`
 	Exchange         string     `yaml:"exchange"`
-	Queue            queueNames `yaml:"queue"`
+	Queue            QueueNames `yaml:"queue"`
 	ReconnectRetries int        `yaml:"reconnectRetries"`
 	ReconnectTimeout int        `yaml:"reconnectTimeout"`
 }

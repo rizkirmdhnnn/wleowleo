@@ -3,12 +3,12 @@ module github.com/rizkirmdhn/wleowleo
 go 1.23.2
 
 require (
+	github.com/chromedp/cdproto v0.0.0-20250319231242-a755498943c8
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.20.1
 )
 
 require (
-	github.com/chromedp/cdproto v0.0.0-20250319231242-a755498943c8 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250211171154-1ae217ad3535 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect

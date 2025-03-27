@@ -109,7 +109,7 @@ func (c *RabbitMQClient) handleReconnect() {
 	for err := range connErrChan {
 		fmt.Printf("RabbitMQ connection closed: %v. Attempting to reconnect...\n", err)
 
-		for i := 0; i < c.config.ReconnectRetries; i++ {
+		for i := range c.config.ReconnectRetries {
 			time.Sleep(time.Duration(c.config.ReconnectTimeout) * time.Microsecond)
 
 			if err := c.connect(); err == nil {

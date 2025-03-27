@@ -12,6 +12,7 @@ type ScrapingCommand struct {
 	Data   Data   `json:"data,omitempty"`
 }
 
+// Data contains the start and end page
 type Data struct {
 	StartPage int `json:"startPage"`
 	EndPage   int `json:"endPage"`
