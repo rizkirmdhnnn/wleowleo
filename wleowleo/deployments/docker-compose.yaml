@@ -35,6 +35,24 @@ services:
       - wleowleo-network
     restart: unless-stopped
 
+  downloader:
+    build:
+      context: ..
+      dockerfile: deployments/docker/Dockerfile.downloader
+    container_name: wleowleo-downloader
+    environment:
+      - TZ=Asia/Jakarta
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    volumes:
+      - ./temp:/app/temp
+      - ./downloads:/app/downloads
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wleowleo-network
+    restart: unless-stopped
+
   web:
     build:
       context: ..
