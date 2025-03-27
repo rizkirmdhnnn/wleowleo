@@ -300,3 +300,8 @@ func (c *RabbitMQClient) Close() error {
 
 	return nil
 }
+
+// GetConfig returns the RabbitMQ configuration
+func (c *RabbitMQClient) GetConfig() *config.RabbitMQConfig {
+	return c.config
+}

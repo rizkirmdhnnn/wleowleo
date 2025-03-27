@@ -100,3 +100,8 @@ func (c *Config) GetDownloaderConfig() *DownloaderConfig {
 func (c *Config) GetWebPanelConfig() *WebPanelConfig {
 	return &c.WebPanel
 }
+
+// Get config for RabbitMQ
+func (c *Config) GetRabbitMQConfig() *RabbitMQConfig {
+	return &c.RabbitMq
+}
