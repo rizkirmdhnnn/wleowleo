@@ -20,13 +20,10 @@ import (
 
 // Constants for the scraper service
 const (
-	ScraperCommandQueue  = "scraper_commands"
-	VideoLinksQueue      = "scraper_video_queue"
-	ScraperLogQueue      = "scraper_log"
-	ExchangeName         = "wleowleo"
-	CommandsRoutingKey   = "commands.scraper"
-	VideoLinksRoutingKey = "video.links"
-	ScraperLogRoutingKey = "scraper.log"
+	ConfigRoutingKey   = "downloader.config"
+	TaskRoutingKey     = "downloader.task"
+	LogRoutingKey      = "scraper.log"
+	CommandsRoutingKey = "scraper.start"
 
 	DefaultMaxRetries = 3
 	DefaultRetryDelay = 2 * time.Second
@@ -36,6 +33,7 @@ const (
 // ScraperService is the struct that holds the scraper service
 type ScraperService struct {
 	config     *config.ScraperConfig
+	rabbitCfg  *config.RabbitMQConfig
 	log        *logrus.Logger
 	httpClient *http.Client
 	message    messaging.Client
@@ -46,9 +44,10 @@ type ScraperService struct {
 }
 
 // NewScraperService creates a new ScraperService
-func NewScraperService(config *config.ScraperConfig, logger *logrus.Logger, msg messaging.Client) *ScraperService {
+func NewScraperService(config *config.ScraperConfig, rabbitCfg *config.RabbitMQConfig, logger *logrus.Logger, msg messaging.Client) *ScraperService {
 	return &ScraperService{
 		config:     config,
+		rabbitCfg:  rabbitCfg,
 		log:        logger,
 		httpClient: &http.Client{},
 		message:    msg,
@@ -67,7 +66,7 @@ func (s *ScraperService) Start() error {
 	}
 
 	// Consume messages
-	return s.message.Consume(ScraperCommandQueue, func(msg []byte) error {
+	return s.message.Consume(s.rabbitCfg.Queue.CommandQueue, func(msg []byte, routingKey string) error {
 		return s.handleCommand(ctx, msg)
 	})
 }
@@ -85,23 +84,39 @@ func (s *ScraperService) Stop() {
 
 // setupMessaging sets up the messaging infrastructure
 func (s *ScraperService) setupMessaging() error {
-	// Declare and bind all needed queues
 	queues := []struct {
-		name       string
-		routingKey string
+		name        string
+		exchange    string
+		routingKeys []string
 	}{
-		{ScraperCommandQueue, CommandsRoutingKey},
-		{VideoLinksQueue, VideoLinksRoutingKey},
-		{ScraperLogQueue, ScraperLogRoutingKey},
+		{
+			name:        s.rabbitCfg.Queue.DownloaderQueue,
+			exchange:    s.rabbitCfg.Exchange.Task,
+			routingKeys: []string{TaskRoutingKey, ConfigRoutingKey},
+		},
+		{
+			name:        s.rabbitCfg.Queue.CommandQueue,
+			exchange:    s.rabbitCfg.Exchange.Task,
+			routingKeys: []string{CommandsRoutingKey},
+		},
+		{
+			name:        s.rabbitCfg.Queue.LogQueue,
+			exchange:    s.rabbitCfg.Exchange.Log,
+			routingKeys: []string{LogRoutingKey},
+		},
 	}
 
 	for _, q := range queues {
+		// Declare queue
 		if err := s.message.DeclareQueue(q.name); err != nil {
 			return fmt.Errorf("failed to declare queue %s: %w", q.name, err)
 		}
 
-		if err := s.message.BindQueue(q.name, ExchangeName, q.routingKey); err != nil {
-			return fmt.Errorf("failed to bind queue %s: %w", q.name, err)
+		// Bind queue to each routing key
+		for _, key := range q.routingKeys {
+			if err := s.message.BindQueue(q.name, q.exchange, key); err != nil {
+				return fmt.Errorf("failed to bind queue %s to exchange %s with key %s: %w", q.name, q.exchange, key, err)
+			}
 		}
 	}
 
@@ -133,6 +148,9 @@ func (s *ScraperService) handleCommand(ctx context.Context, msg []byte) error {
 		// Get the parameters with sensible defaults
 		startPage := getIntWithDefault(command.Data.StartPage, 1)
 		endPage := getIntWithDefault(command.Data.EndPage, 5)
+
+		// Publish the downloader configuration
+		s.publishDownloaderConfig(command)
 
 		// Track this goroutine with WaitGroup
 		s.wg.Add(1)
@@ -593,7 +611,7 @@ func (s *ScraperService) processURL(ctx context.Context, page models.Page, timeo
 
 // publishVideoLink publishes a video link message
 func (s *ScraperService) publishVideoLink(page models.Page) {
-	s.message.PublishJSON(ExchangeName, VideoLinksRoutingKey, models.Video{
+	s.message.PublishJSON(s.rabbitCfg.Exchange.Task, TaskRoutingKey, models.Video{
 		Title: page.Title,
 		URL:   page.URL,
 		M3U8:  &page.M3u8,
@@ -619,7 +637,14 @@ func (s *ScraperService) publishScraperLog(status string, page models.Page, err 
 		log.Error = err.Error()
 	}
 
-	s.message.PublishJSON(ExchangeName, ScraperLogRoutingKey, log)
+	s.message.PublishJSON(s.rabbitCfg.Exchange.Log, LogRoutingKey, log)
+}
+
+// publishConfig publishes the downloader configuration
+func (s *ScraperService) publishDownloaderConfig(cfg models.ScrapingCommand) {
+	if err := s.message.PublishJSON(s.rabbitCfg.Exchange.Task, ConfigRoutingKey, cfg); err != nil {
+		s.log.WithError(err).Error("Failed to publish downloader config")
+	}
 }
 
 // Helper function to get int value with fallback default

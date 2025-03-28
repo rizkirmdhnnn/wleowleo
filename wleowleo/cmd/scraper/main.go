@@ -20,7 +20,8 @@ func main() {
 	}
 
 	// Get the Scraper configuration
-	scraperCfg := cfg.GetAppConfig()
+	scraperCfg := cfg.GetScraperConfig()
+	rabbitCfg := cfg.GetRabbitMQConfig()
 
 	// Initialize logger
 	log := logger.New(cfg)
@@ -41,7 +42,7 @@ func main() {
 	defer cancel()
 
 	// Create a new Scraper service
-	scraperService := service.NewScraperService(&cfg.Scraper, log, messagingClient)
+	scraperService := service.NewScraperService(scraperCfg, rabbitCfg, log, messagingClient)
 
 	// Start the service
 	if err := scraperService.Start(); err != nil {

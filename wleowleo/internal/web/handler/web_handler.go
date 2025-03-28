@@ -14,7 +14,7 @@ import (
 
 // Constants for the message routing
 const (
-	CommandsRoutingKey = "commands.scraper"
+	CommandsRoutingKey = "scraper.start"
 )
 
 type Handler struct {
@@ -69,10 +69,10 @@ func (h *Handler) WebSocketHandler() gin.HandlerFunc {
 // setupRabbitMQConsumer sets up RabbitMQ consumers for logs and other messages
 func (h *Handler) setupRabbitMQConsumer() {
 	// Get queue configuration
-	queueName := h.msgClient.(*messaging.RabbitMQClient).GetConfig().Queue.ScraperLogQueue
+	queueName := h.msgClient.(*messaging.RabbitMQClient).GetConfig().Queue.LogQueue
 
 	// Setup consumer for scraper logs
-	err := h.msgClient.Consume(queueName, func(message []byte) error {
+	err := h.msgClient.Consume(queueName, func(message []byte, routingKey string) error {
 		// Parse message
 		var scrapLog models.ScrapLog
 		if err := json.Unmarshal(message, &scrapLog); err != nil {
@@ -154,8 +154,9 @@ func (h *Handler) StartScraperHandler() gin.HandlerFunc {
 		command := models.ScrapingCommand{
 			Action: models.StartScrapingAction,
 			Data: models.Data{
-				StartPage: req.FromPages,
-				EndPage:   req.ToPages,
+				StartPage:  req.FromPages,
+				EndPage:    req.ToPages,
+				Concurrent: req.ConcurrentDownload,
 			},
 		}
 
@@ -252,7 +253,7 @@ func (h *Handler) UpdateConfigHandler() gin.HandlerFunc {
 // publishCommand publishes a command to the RabbitMQ command queue
 func (h *Handler) publishCommand(command models.ScrapingCommand) error {
 	return h.msgClient.PublishJSON(
-		h.msgClient.(*messaging.RabbitMQClient).GetConfig().Exchange,
+		h.msgClient.(*messaging.RabbitMQClient).GetConfig().Exchange.Task,
 		CommandsRoutingKey,
 		command,
 	)

@@ -25,7 +25,7 @@ type Client interface {
 	BindQueue(queueName, exchange, routingKey string) error
 
 	// Consume consumes messages from the given queue
-	Consume(queueName string, handler func([]byte) error) error
+	Consume(queueName string, handler func([]byte, string) error) error
 
 	// ConsumeWithContext consumes messages from the given queue with context support
 	ConsumeWithContext(ctx context.Context, queueName string, handler func([]byte) error) error
@@ -47,8 +47,12 @@ func NewRabbitMQClient(config *config.RabbitMQConfig) (*RabbitMQClient, error) {
 		return nil, fmt.Errorf("rabbitmq URL is required")
 	}
 
-	if config.Exchange == "" {
-		return nil, fmt.Errorf("rabbitmq exchange name is required")
+	if config.Exchange.Log == "" {
+		return nil, fmt.Errorf("log exchange name is required")
+	}
+
+	if config.Exchange.Task == "" {
+		return nil, fmt.Errorf("task exchange name is required")
 	}
 
 	client := &RabbitMQClient{
@@ -79,15 +83,30 @@ func (c *RabbitMQClient) connect() error {
 		return fmt.Errorf("failed to open a channel: %w", err)
 	}
 
-	// Declare the exchange
+	// Declare log exchange
 	err = c.channel.ExchangeDeclare(
-		c.config.Exchange, // name
-		"direct",          // type
-		true,              // durable
-		false,             // auto-deleted
-		false,             // internal
-		false,             // no-wait
-		nil,               // arguments
+		c.config.Exchange.Log, // name
+		"direct",              // type
+		true,                  // durable
+		false,                 // auto-deleted
+		false,                 // internal
+		false,                 // no-wait
+		nil,                   // arguments
+	)
+	if err != nil {
+		c.Close()
+		return fmt.Errorf("failed to declare an exchange: %w", err)
+	}
+
+	// Declare task exchange
+	err = c.channel.ExchangeDeclare(
+		c.config.Exchange.Task, // name
+		"direct",               // type
+		true,                   // durable
+		false,                  // auto-deleted
+		false,                  // internal
+		false,                  // no-wait
+		nil,                    // arguments
 	)
 	if err != nil {
 		c.Close()
@@ -128,7 +147,7 @@ func (c *RabbitMQClient) handleReconnect() {
 // PublishMessage publishes a message to the exchange with the given routing key
 func (c *RabbitMQClient) PublishMessage(exchange, routingKey string, body []byte) error {
 	if exchange == "" {
-		exchange = c.config.Exchange
+		return fmt.Errorf("exchange name is required")
 	}
 
 	return c.channel.Publish(
@@ -153,7 +172,7 @@ func (c *RabbitMQClient) PublishJSON(exchange, routingKey string, data interface
 	}
 
 	if exchange == "" {
-		exchange = c.config.Exchange
+		return fmt.Errorf("exchange name is required")
 	}
 
 	return c.channel.Publish(
@@ -187,7 +206,7 @@ func (c *RabbitMQClient) DeclareQueue(name string) error {
 // BindQueue binds a queue to an exchange with the given routing key
 func (c *RabbitMQClient) BindQueue(queueName, exchange, routingKey string) error {
 	if exchange == "" {
-		exchange = c.config.Exchange
+		return fmt.Errorf("exchange name is required")
 	}
 
 	return c.channel.QueueBind(
@@ -200,7 +219,7 @@ func (c *RabbitMQClient) BindQueue(queueName, exchange, routingKey string) error
 }
 
 // Consume consumes messages from the given queue
-func (c *RabbitMQClient) Consume(queueName string, handler func([]byte) error) error {
+func (c *RabbitMQClient) Consume(queueName string, handler func(msgs []byte, routingKey string) error) error {
 	// Ensure queue exists
 	if err := c.DeclareQueue(queueName); err != nil {
 		return fmt.Errorf("failed to declare queue: %w", err)
@@ -223,7 +242,7 @@ func (c *RabbitMQClient) Consume(queueName string, handler func([]byte) error) e
 	// Process messages
 	go func() {
 		for msg := range msgs {
-			err := handler(msg.Body)
+			err := handler(msg.Body, msg.RoutingKey)
 			if err != nil {
 				fmt.Printf("Error processing message: %v\n", err)
 				// Negative acknowledgement, message will be requeued

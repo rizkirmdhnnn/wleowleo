@@ -14,6 +14,7 @@ type ScrapingCommand struct {
 
 // Data contains the start and end page
 type Data struct {
-	StartPage int `json:"startPage"`
-	EndPage   int `json:"endPage"`
+	StartPage  int `json:"startPage"`
+	EndPage    int `json:"endPage"`
+	Concurrent int `json:"concurrent"`
 }
