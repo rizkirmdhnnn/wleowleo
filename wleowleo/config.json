@@ -1,0 +1,36 @@
+{
+  "app": {
+    "name": "wleowleo",
+    "logLevel": 4,
+    "env": "development"
+  },
+  "rabbitmq": {
+    "url": "amqp://guest:guest@rabbitmq:5672/",
+    "exchange": {
+      "task": "task_exchange",
+      "log": "log_exchange"
+    },
+    "queue": {
+      "commandQueue": "scraper_commands",
+      "downloaderQueue": "scraper_video_queue",
+      "logQueue": "web_log_queue"
+    },
+    "reconnectRetries": 5,
+    "reconnectTimeout": 10000
+  },
+  "scraper": {
+    "host": "https://viral.waptrick.men",
+    "startPage": 1,
+    "endPage": 2,
+    "userAgent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
+  },
+  "downloader": {
+    "concurrency": 2,
+    "tempDir": "./temp",
+    "downloadDir": "./downloads"
+  },
+  "webpanel": {
+    "host": "localhost",
+    "port": 8080
+  }
+}

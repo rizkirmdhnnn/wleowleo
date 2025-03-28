@@ -3,82 +3,88 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/viper"
 )
 
 // Config is the struct that holds the configuration of the application
 type Config struct {
-	App        AppConfig        `yaml:"app"`
-	RabbitMq   RabbitMQConfig   `yaml:"rabbitmq"`
-	Scraper    ScraperConfig    `yaml:"scraper"`
-	Downloader DownloaderConfig `yaml:"downloader"`
-	WebPanel   WebPanelConfig   `yaml:"webpanel"`
+	App        AppConfig        `json:"app"`
+	RabbitMq   RabbitMQConfig   `json:"rabbitmq"`
+	Scraper    ScraperConfig    `json:"scraper"`
+	Downloader DownloaderConfig `json:"downloader"`
+	WebPanel   WebPanelConfig   `json:"webpanel"`
 }
 
 type AppConfig struct {
-	Name     string `yaml:"name"`
-	LogLevel int    `yaml:"logLevel"`
-	Env      string `yaml:"env"`
-}
-
-type QueueNames struct {
-	ScraperCommandQueue string `yaml:"scraperCommandQueue"`
-	VideoLinksQueue     string `yaml:"videoLinksQueue"`
-	ScraperLogQueue     string `yaml:"scraperLogQueue"`
+	Name     string `json:"name"`
+	LogLevel int    `json:"logLevel"`
+	Env      string `json:"env"`
 }
 
 type RabbitMQConfig struct {
-	URL              string     `yaml:"url"`
-	Exchange         string     `yaml:"exchange"`
-	Queue            QueueNames `yaml:"queue"`
-	ReconnectRetries int        `yaml:"reconnectRetries"`
-	ReconnectTimeout int        `yaml:"reconnectTimeout"`
+	URL              string        `json:"url"`
+	Exchange         ExchangeNames `json:"exchange"`
+	Queue            QueueNames    `json:"queue"`
+	ReconnectRetries int           `json:"reconnectRetries"`
+	ReconnectTimeout int           `json:"reconnectTimeout"`
 }
 
 type ScraperConfig struct {
-	Host      string `yaml:"host"`
-	StartPage int    `yaml:"startPage"`
-	EndPage   int    `yaml:"endPage"`
-	UserAgent string `yaml:"userAgent"`
+	Host      string `json:"host"`
+	StartPage int    `json:"startPage"`
+	EndPage   int    `json:"endPage"`
+	UserAgent string `json:"userAgent"`
 }
 
 type DownloaderConfig struct {
-	Concurrency int    `yaml:"concurrency"`
-	TempDir     string `yaml:"tempDir"`
-	DownloadDir string `yaml:"downloadDir"`
+	Concurrency int    `json:"concurrency"`
+	TempDir     string `json:"tempDir"`
+	DownloadDir string `json:"downloadDir"`
 }
 
 type WebPanelConfig struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
-// NewConfig creates a new Config struct
+type ExchangeNames struct {
+	Task string `json:"task"`
+	Log  string `json:"log"`
+}
+
+type QueueNames struct {
+	CommandQueue    string `json:"commandQueue"`
+	DownloaderQueue string `json:"downloaderQueue"`
+	LogQueue        string `json:"logQueue"`
+}
+
+// Load config from config.json
 func Load() (*Config, error) {
 	v := viper.New()
-	v.SetConfigName("config")
-	v.SetConfigType("yaml")
-	v.AddConfigPath(".")
-
-	// Add environment variable support
+	v.SetConfigName("config") // Nama file tanpa ekstensi
+	v.SetConfigType("json")   // Ubah ke JSON
+	v.AddConfigPath(".")      // Cari file di direktori saat ini
 	v.AutomaticEnv()
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	// Try to read the config file
+	// Coba baca file konfigurasi
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("error reading config file: %w", err)
 		}
 	}
 
-	// Unmarshal directly into config struct
+	fmt.Printf("Viper All Settings: %+v\n", v.AllSettings())
+
+	// Unmarshal JSON ke struct Config
 	var config Config
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("unable to decode config: %w", err)
 	}
 
+	fmt.Printf("Config: %+v\n", config)
+
+	// Override dari environment variable jika ada
 	if envURL := os.Getenv("RABBITMQ_URL"); envURL != "" {
 		config.RabbitMq.URL = envURL
 	}
