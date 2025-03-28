@@ -31,8 +31,9 @@ ENV CHROME_BIN=/usr/bin/chromium-browser \
 
 # Copy binary from builder stage
 COPY --from=builder /app/scraper /app/
+
 # Copy config file
-COPY --from=builder /app/config.yaml /app/
+COPY --from=builder /app/config.json /app/
 
 # Set the entrypoint
 ENTRYPOINT ["/app/scraper"]
