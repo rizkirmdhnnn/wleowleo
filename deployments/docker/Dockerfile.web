@@ -1,0 +1,35 @@
+FROM golang:alpine AS builder
+
+WORKDIR /app
+
+# Copy go.mod and go.sum files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -o panel ./cmd/web
+
+# Create final image
+FROM alpine:latest
+
+WORKDIR /app
+
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata
+
+# Copy binary from builder stage
+COPY --from=builder /app/panel /app/
+# Copy templates and static files
+COPY --from=builder /app/internal/web/templates /app/internal/web/templates
+COPY --from=builder /app/internal/web/static /app/internal/web/static
+# Copy config file
+COPY --from=builder /app/config.json /app/
+
+# Set the entrypoint
+ENTRYPOINT ["/app/panel"]

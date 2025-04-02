@@ -1,0 +1,82 @@
+services:
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: wleowleo-rabbitmq
+    ports:
+      - "5672:5672" # AMQP protocol port
+      - "15672:15672" # Management UI port
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - wleowleo-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  scraper:
+    build:
+      context: ..
+      dockerfile: deployments/docker/Dockerfile.scraper
+    container_name: wleowleo-scraper
+    environment:
+      - TZ=Asia/Jakarta
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wleowleo-network
+    restart: unless-stopped
+
+  downloader:
+    build:
+      context: ..
+      dockerfile: deployments/docker/Dockerfile.downloader
+    container_name: wleowleo-downloader
+    environment:
+      - TZ=Asia/Jakarta
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    volumes:
+      - ./temp:/app/temp
+      - ./downloads:/app/downloads
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - wleowleo-network
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: deployments/docker/Dockerfile.web
+    container_name: wleowleo-panel
+    ports:
+      - "8080:8080" # Web UI port
+    environment:
+      - TZ=Asia/Jakarta
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+
+    depends_on:
+      scraper:
+        condition: service_started
+      downloader:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+    networks:
+      - wleowleo-network
+    restart: unless-stopped
+
+networks:
+  wleowleo-network:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
