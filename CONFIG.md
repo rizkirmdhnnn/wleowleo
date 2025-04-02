@@ -4,33 +4,70 @@
 
 Proyek ini sekarang menggunakan file konfigurasi terpusat (`.env`) yang terletak di root project. File ini berisi semua variabel lingkungan yang dibutuhkan oleh kedua service (scraper dan downloader).
 
-## Variabel Lingkungan
+## Konfigurasi Aplikasi
+
+### Konfigurasi Umum
+
+- `APP_NAME`: Nama aplikasi (default: wleowleo)
+- `LOG_LEVEL`: Level logging (1-5, dimana 5 adalah level paling detail)
+- `APP_ENV`: Environment aplikasi (development/production)
 
 ### RabbitMQ Configuration
-- `RABBITMQ_HOST`: Host RabbitMQ (default: rabbitmq)
-- `RABBITMQ_PORT`: Port RabbitMQ (default: 5672)
-- `RABBITMQ_USER`: Username RabbitMQ (default: guest)
-- `RABBITMQ_PASSWORD`: Password RabbitMQ (default: guest)
-- `RABBITMQ_QUEUE`: Nama queue RabbitMQ (default: video_queue)
+
+- `RABBITMQ_URL`: URL koneksi RabbitMQ (format: amqp://user:password@host:port/)
+- `RABBITMQ_EXCHANGE`: Nama exchange RabbitMQ (default: task_exchange)
+- `RABBITMQ_QUEUE_SCRAPER`: Nama queue untuk scraper (default: scraper_queue)
+- `RABBITMQ_QUEUE_DOWNLOADER`: Nama queue untuk downloader (default: downloader_queue)
+- `RABBITMQ_QUEUE_DOWNLOAD_TASK`: Nama queue untuk tugas download (default: download_task_queue)
+- `RABBITMQ_QUEUE_LOG`: Nama queue untuk log (default: log_queue)
+- `RABBITMQ_RECONNECT_RETRIES`: Jumlah percobaan reconnect (default: 5)
+- `RABBITMQ_RECONNECT_TIMEOUT`: Timeout untuk reconnect dalam milidetik (default: 10000)
 
 ### Scraper Configuration
-- `BASE_URL`: URL dasar website target
-- `USERAGENT`: User agent untuk bypass cloudflare
+
+- `SCRAPER_HOST`: URL dasar website target
+- `SCRAPER_USER_AGENT`: User agent untuk bypass cloudflare
 - `FROM_PAGES`: Halaman awal yang akan di-scrape (default: 1)
 - `TO_PAGES`: Halaman akhir yang akan di-scrape (default: 5)
-- `LOG_LEVEL`: Level logging (1-5, dimana 5 adalah level paling detail)
 
 ### Downloader Configuration
-- `LIMIT_CONCURRENT_DOWNLOAD`: Batas jumlah concurrent download (default: 5) - mengontrol jumlah worker paralel untuk mengoptimalkan kinerja download
+
+- `DOWNLOADER_DEFAULT_WORKER`: Batas jumlah concurrent download (default: 5) - mengontrol jumlah worker paralel untuk mengoptimalkan kinerja download
+- `DOWNLOADER_TEMP_DIR`: Direktori untuk menyimpan file sementara (default: ./temp)
+- `DOWNLOADER_DOWNLOAD_DIR`: Direktori untuk menyimpan hasil download (default: ./downloads)
+
+### Web Dashboard Configuration
+
+- `WEBPANEL_HOST`: Host untuk web dashboard (default: localhost)
+- `WEBPANEL_PORT`: Port untuk web dashboard (default: 8080)
 
 ## Cara Menggunakan
 
-1. Salin file `.env.example` ke `.env`:
+### Menggunakan File JSON
+
+1. Salin file `config.example.json` ke `config.json`:
+
    ```bash
-   cp .env.example .env
+   cp config.example.json config.json
    ```
 
-2. Edit file `.env` sesuai kebutuhan:
+2. Edit file `config.json` sesuai kebutuhan:
+   ```bash
+   nano config.json
+   ```
+
+### Menggunakan Variabel Lingkungan
+
+Alternatif lain, kamu bisa menggunakan variabel lingkungan untuk mengatur konfigurasi. Variabel lingkungan akan menimpa nilai yang ada di file `config.json`.
+
+1. Buat file `.env` di root project:
+
+   ```bash
+   touch .env
+   ```
+
+2. Tambahkan variabel lingkungan yang diperlukan:
+
    ```bash
    nano .env
    ```
@@ -40,25 +77,43 @@ Proyek ini sekarang menggunakan file konfigurasi terpusat (`.env`) yang terletak
    docker compose up
    ```
 
-## Contoh File .env
+## Contoh File Konfigurasi
 
+### Contoh config.json
+
+```json
+{
+  "app": {
+    "name": "wleowleo",
+    "logLevel": 4,
+    "env": "development"
+  },
+  "rabbitmq": {
+    "url": "amqp://guest:guest@localhost:5672/",
+    "exchange": "task_exchange",
+    "queue": {
+      "scraper": "scraper_queue",
+      "downloader": "downloader_queue",
+      "downloadTask": "download_task_queue",
+      "log": "log_queue"
+    },
+    "reconnectRetries": 5,
+    "reconnectTimeout": 10000
+  },
+  "scraper": {
+    "host": "URL_TARGET",
+    "userAgent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
+  },
+  "downloader": {
+    "defaultWorker": 5,
+    "tempDir": "./temp",
+    "downloadDir": "./downloads"
+  },
+  "webpanel": {
+    "host": "localhost",
+    "port": 8080
+  }
+}
 ```
-# RabbitMQ Configuration
-RABBITMQ_HOST=rabbitmq
-RABBITMQ_PORT=5672
-RABBITMQ_USER=guest
-RABBITMQ_PASSWORD=guest
-RABBITMQ_QUEUE=video_queue
 
-# Scraper Configuration
-BASE_URL="" #berdosa loh gaboleh
-USERAGENT="Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
-FROM_PAGES=1
-TO_PAGES=5
-LOG_LEVEL="4"
-
-# Downloader Configuration
-LIMIT_CONCURRENT_DOWNLOAD=5
-```
-
-Dengan konfigurasi terpusat ini, pengelolaan variabel lingkungan menjadi lebih mudah karena semua konfigurasi berada dalam satu file.
+Dengan konfigurasi terpusat ini, pengelolaan konfigurasi menjadi lebih mudah karena semua pengaturan berada dalam satu file.
