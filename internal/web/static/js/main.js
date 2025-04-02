@@ -58,7 +58,7 @@ document.addEventListener("DOMContentLoaded", function () {
         addScraperLog(
           data.data.title,
           data.data.m3u8 || data.error,
-          data.status,
+          data.status
         );
         updateStats(data.stats);
         break;
@@ -86,7 +86,7 @@ document.addEventListener("DOMContentLoaded", function () {
   socket.onclose = function (event) {
     if (event.wasClean) {
       console.log(
-        `Connection closed cleanly, code=${event.code} reason=${event.reason}`,
+        `Connection closed cleanly, code=${event.code} reason=${event.reason}`
       );
       showToast(`Connection closed: ${event.reason}`, "info");
     } else {
@@ -173,7 +173,7 @@ document.addEventListener("DOMContentLoaded", function () {
         from_pages: parseInt(document.getElementById("from-page").value),
         to_pages: parseInt(document.getElementById("to-page").value),
         concurrent_download: parseInt(
-          document.getElementById("concurrent-download").value,
+          document.getElementById("concurrent-download").value
         ),
       };
 
@@ -312,7 +312,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const step = Math.max(
       1,
-      Math.floor(Math.abs(newValue - currentValue) / 20),
+      Math.floor(Math.abs(newValue - currentValue) / 20)
     );
     let current = currentValue;
 
@@ -354,7 +354,7 @@ document.addEventListener("DOMContentLoaded", function () {
       // Update existing log item
       const messageElement = existingItem.querySelector(".text-sm.mt-1");
       const timestampElement = existingItem.querySelector(
-        ".text-xs.opacity-70",
+        ".text-xs.opacity-70"
       );
 
       // Update message and timestamp
@@ -364,7 +364,7 @@ document.addEventListener("DOMContentLoaded", function () {
       // Update border color based on status
       existingItem.className = existingItem.className.replace(
         /border-l-(error|success|warning)/,
-        borderColor,
+        borderColor
       );
 
       // Highlight the updated item with a brief animation
@@ -418,21 +418,30 @@ document.addEventListener("DOMContentLoaded", function () {
     const percent = Math.round((progress / total) * 100);
 
     if (existingItem) {
-      // Update existing log item
-      const progressBar = existingItem.querySelector(".bg-success");
-      const percentText = existingItem.querySelector(".text-xs.opacity-70");
-      const progressText = existingItem.querySelector(".text-xs.text-right");
+      // Check if this item is already at 100% - don't update if it is
+      const currentPercentText = existingItem.querySelector(
+        ".text-xs.opacity-70"
+      );
+      const isAlreadyComplete =
+        currentPercentText && currentPercentText.textContent === "100%";
 
-      if (progressBar) progressBar.style.width = `${percent}%`;
-      if (percentText) percentText.textContent = `${percent}%`;
-      if (progressText) progressText.textContent = `${progress}/${total}`;
+      if (!isAlreadyComplete) {
+        // Update existing log item
+        const progressBar = existingItem.querySelector(".bg-success");
+        const percentText = existingItem.querySelector(".text-xs.opacity-70");
+        const progressText = existingItem.querySelector(".text-xs.text-right");
 
-      // If complete (100%), highlight the item
-      if (percent === 100) {
-        existingItem.classList.add("border-l-success");
+        if (progressBar) progressBar.style.width = `${percent}%`;
+        if (percentText) percentText.textContent = `${percent}%`;
+        if (progressText) progressText.textContent = `${progress}/${total}`;
 
-        // Show a toast for completion
-        showToast(`Download completed: ${message}`, "success");
+        // If complete (100%), highlight the item
+        if (percent === 100) {
+          existingItem.classList.add("border-l-success");
+
+          // Show a toast for completion
+          showToast(`Download completed: ${message}`, "success");
+        }
       }
 
       return;
