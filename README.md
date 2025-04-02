@@ -41,10 +41,10 @@ cp config.example.json config.json
 # Edit file config.json sesuai kebutuhan
 ```
 
-4. Bikin folder `output` dan `temp` (kalo belum ada):
+4. Bikin folder `downloads` dan `temp` (kalo belum ada):
 
 ```bash
-mkdir -p output temp
+mkdir -p downloads temp
 ```
 
 ### Cara Jalanin
@@ -52,16 +52,17 @@ mkdir -p output temp
 **Pake Docker Compose (Direkomendasikan):**
 
 ```bash
-docker compose up
+# Jalankan dari root project
+docker compose -f deployments/docker-compose.yaml up
 ```
 
 Atau kalo mau jalanin di background:
 
 ```bash
-docker compose up -d
+docker compose -f deployments/docker-compose.yaml up -d
 ```
 
-Semua hasil scraping dan video bakal disimpen di folder `output` di komputer kamu.
+Semua hasil scraping dan video bakal disimpen di folder `downloads` di komputer kamu (sesuai konfigurasi di docker-compose.yaml).
 
 ## Konfigurasi
 
@@ -115,7 +116,8 @@ Untuk penjelasan lebih detail tentang konfigurasi, lihat file [CONFIG.md](CONFIG
 Cara paling mudah adalah menggunakan Docker Compose:
 
 ```bash
-docker compose up
+# Jalankan dari root project
+docker compose -f deployments/docker-compose.yaml up
 ```
 
 Ini akan menjalankan empat service:
