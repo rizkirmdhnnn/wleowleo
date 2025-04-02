@@ -31,11 +31,10 @@ document.addEventListener("DOMContentLoaded", function () {
   const totalPageScraped = document.getElementById("total-page-scraped");
   const totalScrapedLink = document.getElementById("total-scraped-link");
   const videoDownloaded = document.getElementById("video-downloaded");
-  const configForm = document.getElementById("config-form");
 
   // Track scraping process state - retrieve from localStorage if available
   let isProcessRunning = localStorage.getItem("isProcessRunning") === "true";
-  
+
   // Set initial UI state based on saved state
   setProcessRunning(isProcessRunning);
 
@@ -43,11 +42,7 @@ document.addEventListener("DOMContentLoaded", function () {
   socket.onopen = function (e) {
     console.log("WebSocket connection established");
     showToast("Connected to server", "success");
-    // Request initial stats
-    fetchStats();
-
-    // Add connected indicator
-    document.querySelectorAll(".panel span").forEach((span) => {
+    document.querySelectorAll("span").forEach((span) => {
       if (span.textContent === "Live") {
         span.classList.add("bg-success-color");
       }
@@ -57,9 +52,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // WebSocket message event
   socket.onmessage = function (event) {
     const data = JSON.parse(event.data);
-
     console.log("Message from server:", data);
-
     switch (data.type) {
       case "scraper_log":
         addScraperLog(
@@ -70,20 +63,19 @@ document.addEventListener("DOMContentLoaded", function () {
         updateStats(data.stats);
         break;
       case "downloader_log":
-        addDownloaderLog(data.message, data.progress, data.total);
+        addDownloaderLog(data.message, data.progress || 0, data.total || 1);
         break;
       case "stats":
-        updateStats(data);
+        updateStats(data.stats);
         break;
       case "status":
-        // Handle status messages (like "Scraping started")
-        console.log(data.message);
         showToast(data.message, data.status || "info");
-        
-        // Handle process state based on status message
         if (data.message.includes("started")) {
           setProcessRunning(true);
-        } else if (data.message.includes("stopped") || data.message.includes("completed")) {
+        } else if (
+          data.message.includes("stopped") ||
+          data.message.includes("completed")
+        ) {
           setProcessRunning(false);
         }
         break;
@@ -103,7 +95,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // Update connection indicators
-    document.querySelectorAll(".panel span").forEach((span) => {
+    document.querySelectorAll("span").forEach((span) => {
       if (span.textContent === "Live") {
         span.classList.remove("bg-success-color");
         span.classList.add("bg-error-color");
@@ -120,10 +112,10 @@ document.addEventListener("DOMContentLoaded", function () {
   // Function to set the process running state and update UI accordingly
   function setProcessRunning(running) {
     isProcessRunning = running;
-    
+
     // Store in localStorage to persist across refreshes
     localStorage.setItem("isProcessRunning", running);
-    
+
     if (running) {
       // Process is running - disable start, enable stop
       startButton.disabled = true;
@@ -132,7 +124,7 @@ document.addEventListener("DOMContentLoaded", function () {
         <i data-feather="play" class="h-4 w-4"></i>
         <span>Start Process</span>
       `;
-      
+
       stopButton.disabled = false;
       stopButton.classList.remove("opacity-50", "cursor-not-allowed");
       stopButton.classList.add("bg-error");
@@ -148,7 +140,7 @@ document.addEventListener("DOMContentLoaded", function () {
         <i data-feather="play" class="h-4 w-4"></i>
         <span>Start Process</span>
       `;
-      
+
       stopButton.disabled = true;
       stopButton.classList.add("opacity-50", "cursor-not-allowed");
       stopButton.classList.remove("bg-error");
@@ -157,7 +149,7 @@ document.addEventListener("DOMContentLoaded", function () {
         <span>Stop Process</span>
       `;
     }
-    
+
     // Refresh feather icons
     if (window.feather) {
       feather.replace();
@@ -167,7 +159,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // Event listeners
   startButton.addEventListener("click", function () {
     if (isProcessRunning) return; // Prevent multiple clicks
-    
+
     // Show loading state
     startButton.disabled = true;
     startButton.classList.add("opacity-50", "cursor-not-allowed");
@@ -227,9 +219,9 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   // Add event listener for stop button
-  stopButton.addEventListener("click", function() {
+  stopButton.addEventListener("click", function () {
     if (!isProcessRunning) return; // Prevent clicks if not running
-    
+
     // Show loading state
     stopButton.disabled = true;
     stopButton.classList.add("opacity-50", "cursor-not-allowed");
@@ -242,7 +234,7 @@ document.addEventListener("DOMContentLoaded", function () {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-      }
+      },
     })
       .then((response) => {
         if (!response.ok) {
@@ -253,10 +245,10 @@ document.addEventListener("DOMContentLoaded", function () {
       .then((data) => {
         console.log("Scraping stopped:", data);
         showToast("Scraping process stopped successfully", "info");
-        
+
         // We'll wait for the server to confirm the process is stopped
         // The WebSocket status message handler will update the UI
-        
+
         // If we don't get a WebSocket confirmation within 3 seconds, update UI anyway
         setTimeout(() => {
           if (isProcessRunning) {
@@ -288,89 +280,22 @@ document.addEventListener("DOMContentLoaded", function () {
     const fromPages = localStorage.getItem("from_pages");
     const toPages = localStorage.getItem("to_pages");
     const concurrentDownload = localStorage.getItem("concurrent_download");
-    
+
     if (fromPages) {
       document.getElementById("from-page").value = fromPages;
     }
-    
+
     if (toPages) {
       document.getElementById("to-page").value = toPages;
     }
-    
+
     if (concurrentDownload) {
       document.getElementById("concurrent-download").value = concurrentDownload;
     }
   }
-  
+
   // Load saved form values when the page loads
   loadSavedFormValues();
-
-  // Functions
-  function fetchStats() {
-    fetch("/api/stats")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to fetch stats");
-        }
-        return response.json();
-      })
-      .then((data) => {
-        updateStats(data);
-      })
-      .catch((error) => {
-        console.error("Error fetching stats:", error);
-        showToast(`Failed to fetch statistics: ${error.message}`, "error");
-      });
-  }
-
-  // Update configuration
-  function updateConfig() {
-    const config = {
-      base_url: document.getElementById("base-url")
-        ? document.getElementById("base-url").value
-        : "",
-      from_pages: parseInt(document.getElementById("from-page").value),
-      to_pages: parseInt(document.getElementById("to-page").value),
-      limit_concurrent_download: parseInt(
-        document.getElementById("concurrent-download").value,
-      ),
-    };
-
-    // Validate input
-    if (config.from_pages > config.to_pages) {
-      showToast("From Page must be less than or equal to To Page", "error");
-      return Promise.reject(new Error("Invalid page range"));
-    }
-
-    if (config.limit_concurrent_download <= 0) {
-      showToast("Concurrent Downloads must be greater than 0", "error");
-      return Promise.reject(new Error("Invalid concurrent downloads"));
-    }
-
-    return fetch("/api/config", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(config),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to update configuration");
-        }
-        return response.json();
-      })
-      .then((data) => {
-        console.log("Configuration updated:", data);
-        showToast("Configuration updated successfully", "success");
-        return data;
-      })
-      .catch((error) => {
-        console.error("Error updating configuration:", error);
-        showToast(`Failed to update configuration: ${error.message}`, "error");
-        throw error;
-      });
-  }
 
   // Update stats
   function updateStats(data) {
@@ -408,12 +333,53 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Logging functions
   function addScraperLog(title, message, status) {
-    const logItem = document.createElement("div");
-    const borderColor =
-      status === "error" ? "border-l-error" : "border-l-success";
-    logItem.className = `p-3 mb-2 rounded-md bg-bg-dark border-l-4 ${borderColor} transition-transform duration-200 hover:translate-x-1 w-full`;
+    // Check if a log with the same title already exists
+    const existingItem = Array.from(scraperLogs.children).find((item) => {
+      const titleElement = item.querySelector("p.font-medium");
+      return titleElement && titleElement.textContent === title;
+    });
 
     const timestamp = new Date().toLocaleTimeString();
+    let borderColor = "border-l-success";
+
+    if (status === "error") {
+      borderColor = "border-l-error"; // Red color for other errors
+    }
+
+    if (status === "warm") {
+      borderColor = "border-l-warning"; // Orange color for retry attempts errors
+    }
+
+    if (existingItem) {
+      // Update existing log item
+      const messageElement = existingItem.querySelector(".text-sm.mt-1");
+      const timestampElement = existingItem.querySelector(
+        ".text-xs.opacity-70",
+      );
+
+      // Update message and timestamp
+      if (messageElement) messageElement.textContent = message;
+      if (timestampElement) timestampElement.textContent = timestamp;
+
+      // Update border color based on status
+      existingItem.className = existingItem.className.replace(
+        /border-l-(error|success|warning)/,
+        borderColor,
+      );
+
+      // Highlight the updated item with a brief animation
+      existingItem.style.transition = "background-color 0.3s ease";
+      existingItem.style.backgroundColor = "rgba(255, 255, 255, 0.1)";
+      setTimeout(() => {
+        existingItem.style.backgroundColor = "";
+      }, 300);
+
+      return;
+    }
+
+    // Create new log item if it doesn't exist
+    const logItem = document.createElement("div");
+    logItem.className = `p-3 mb-2 rounded-md bg-bg-dark border-l-4 ${borderColor} transition-transform duration-200 hover:translate-x-1 w-full`;
 
     logItem.innerHTML = `
             <div class="flex justify-between items-start">
@@ -439,20 +405,44 @@ document.addEventListener("DOMContentLoaded", function () {
     setTimeout(() => {
       scraperLogs.scrollTop = 0;
     }, 50);
-
-    // If error, show toast
-    // if (status === 'error') {
-    //     showToast(`Error: ${message}`, 'error');
-    // }
   }
 
   // Add downloader log
   function addDownloaderLog(message, progress, total) {
-    const logItem = document.createElement("div");
-    logItem.className =
-      "p-3 mb-2 rounded-md bg-bg-dark border-l-4 border-l-transparent transition-transform duration-200 hover:translate-x-1 w-full";
+    // Find if we already have a log item for this video
+    const existingItem = Array.from(downloaderLogs.children).find((item) => {
+      const title = item.querySelector("p.font-medium");
+      return title && title.textContent === message;
+    });
 
     const percent = Math.round((progress / total) * 100);
+
+    if (existingItem) {
+      // Update existing log item
+      const progressBar = existingItem.querySelector(".bg-success");
+      const percentText = existingItem.querySelector(".text-xs.opacity-70");
+      const progressText = existingItem.querySelector(".text-xs.text-right");
+
+      if (progressBar) progressBar.style.width = `${percent}%`;
+      if (percentText) percentText.textContent = `${percent}%`;
+      if (progressText) progressText.textContent = `${progress}/${total}`;
+
+      // If complete (100%), highlight the item
+      if (percent === 100) {
+        existingItem.classList.add("border-l-success");
+
+        // Show a toast for completion
+        showToast(`Download completed: ${message}`, "success");
+      }
+
+      return;
+    }
+
+    // Create new log item if it doesn't exist
+    const logItem = document.createElement("div");
+    const borderColor =
+      percent === 100 ? "border-l-success" : "border-l-transparent";
+    logItem.className = `p-3 mb-2 rounded-md bg-bg-dark border-l-4 ${borderColor} transition-transform duration-200 hover:translate-x-1 w-full`;
 
     logItem.innerHTML = `
             <div class="flex justify-between items-start">
@@ -483,9 +473,9 @@ document.addEventListener("DOMContentLoaded", function () {
     }, 50);
 
     // Show toast when download completes
-    // if (progress === total) {
-    //     showToast(`Download completed: ${message}`, 'success');
-    // }
+    if (percent === 100) {
+      showToast(`Download completed: ${message}`, "success");
+    }
   }
 
   // Toast notification system
@@ -575,9 +565,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Add some initial dummy data for demonstration
   setTimeout(() => {
-    // Show a welcome toast
-    showToast("Welcome to WleoWleo Dashboard", "info");
-    
     // Add extra information if process is running
     if (isProcessRunning) {
       showToast("Scraping process is currently running", "info");

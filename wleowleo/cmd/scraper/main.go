@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +11,7 @@ import (
 	"github.com/rizkirmdhn/wleowleo/internal/common/logger"
 	"github.com/rizkirmdhn/wleowleo/internal/common/messaging"
 	"github.com/rizkirmdhn/wleowleo/internal/scraper/service"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -27,13 +29,23 @@ func main() {
 	log := logger.New(cfg)
 
 	// Print the Scraper configuration
-	log.Infof("Scraper configuration: %+v", scraperCfg)
-	log.Infof("RabbitMQ configuration: %+v", cfg.RabbitMq)
+	log.WithFields(logrus.Fields{
+		"component": "scraper_main",
+		"config":    fmt.Sprintf("%+v", scraperCfg),
+	}).Debug("Scraper configuration loaded")
+
+	log.WithFields(logrus.Fields{
+		"component": "scraper_main",
+		"config":    fmt.Sprintf("%+v", cfg.RabbitMq),
+	}).Debug("RabbitMQ configuration loaded")
 
 	// Create a new RabbitMQ client
 	messagingClient, err := messaging.NewRabbitMQClient(&cfg.RabbitMq)
 	if err != nil {
-		log.Fatalf("Failed to create RabbitMQ client: %v", err)
+		log.WithFields(logrus.Fields{
+			"component": "scraper_main",
+			"error":     err,
+		}).Fatal("Failed to create RabbitMQ client")
 	}
 	defer messagingClient.Close()
 
@@ -46,10 +58,13 @@ func main() {
 
 	// Start the service
 	if err := scraperService.Start(); err != nil {
-		log.Fatalf("Failed to start scraper service: %v", err)
+		log.WithFields(logrus.Fields{
+			"component": "scraper_main",
+			"error":     err,
+		}).Fatal("Failed to start scraper service")
 	}
 
-	log.Info("Scraper service started successfully")
+	log.WithField("component", "scraper_main").Info("Scraper service started successfully")
 
 	// Setup signal handling for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -57,7 +72,10 @@ func main() {
 
 	// Block until we receive a termination signal
 	sig := <-sigCh
-	log.Infof("Received signal %s, shutting down...", sig)
+	log.WithFields(logrus.Fields{
+		"component": "scraper_main",
+		"signal":    sig,
+	}).Info("Received signal, shutting down")
 
 	// Trigger graceful shutdown
 	cancel()
@@ -65,5 +83,5 @@ func main() {
 	// Call Stop() if your service has such method
 	scraperService.Stop()
 
-	log.Info("Scraper service stopped")
+	log.WithField("component", "scraper_main").Info("Scraper service stopped")
 }

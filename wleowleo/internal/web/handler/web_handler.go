@@ -15,29 +15,28 @@ import (
 // Constants for the message routing
 const (
 	CommandsRoutingKey = "scraper.start"
+
+	ScraperLogRoutingKey    = "scraper.log"
+	DownloaderLogRoutingKey = "downloader.log"
 )
 
 type Handler struct {
-	webCfg      *config.WebPanelConfig
-	scrapCfg    *config.ScraperConfig
-	downloadCfg *config.DownloaderConfig
-	log         *logrus.Logger
-	msgClient   messaging.Client
-	wsHub       *websocket.Hub
+	cfg     *config.Config
+	log     *logrus.Logger
+	message messaging.Client
+	wsHub   *websocket.Hub
 }
 
-func NewHander(webCfg *config.WebPanelConfig, scrapCfg *config.ScraperConfig, dl *config.DownloaderConfig, log *logrus.Logger, msgClient messaging.Client) *Handler {
+func NewHander(cfg *config.Config, log *logrus.Logger, msg messaging.Client) *Handler {
 	// Create WebSocket hub
 	wsHub := websocket.NewHub(log)
 	go wsHub.Run()
 
 	handler := &Handler{
-		webCfg:      webCfg,
-		scrapCfg:    scrapCfg,
-		downloadCfg: dl,
-		log:         log,
-		msgClient:   msgClient,
-		wsHub:       wsHub,
+		cfg:     cfg,
+		log:     log,
+		message: msg,
+		wsHub:   wsHub,
 	}
 
 	// Setup RabbitMQ consumer
@@ -52,10 +51,10 @@ func (h *Handler) IndexHandler() gin.HandlerFunc {
 		c.HTML(http.StatusOK, "index.html", gin.H{
 			"title": "WleoWleo Dashboard",
 			"config": gin.H{
-				"base_url":                h.webCfg.Host,
-				"FromPages":               h.scrapCfg.StartPage,
-				"ToPages":                 h.scrapCfg.EndPage,
-				"LimitConcurrentDownload": h.downloadCfg.Concurrency,
+				"base_url":                h.cfg.WebPanel.Host,
+				"FromPages":               1,
+				"ToPages":                 2,
+				"LimitConcurrentDownload": h.cfg.Downloader.DefaultWorker,
 			},
 		})
 	}
@@ -68,35 +67,92 @@ func (h *Handler) WebSocketHandler() gin.HandlerFunc {
 
 // setupRabbitMQConsumer sets up RabbitMQ consumers for logs and other messages
 func (h *Handler) setupRabbitMQConsumer() {
-	// Get queue configuration
-	queueName := h.msgClient.(*messaging.RabbitMQClient).GetConfig().Queue.LogQueue
+	// Setup consumer for logs
+	err := h.message.Consume(h.cfg.RabbitMq.Queue.Log, func(message []byte, routingKey string) error {
+		h.log.Info("Received message from RabbitMQ")
+		h.log.Info("Routing key: ", routingKey)
+		h.log.Info("Message: ", string(message))
 
-	// Setup consumer for scraper logs
-	err := h.msgClient.Consume(queueName, func(message []byte, routingKey string) error {
-		// Parse message
-		var scrapLog models.ScrapLog
-		if err := json.Unmarshal(message, &scrapLog); err != nil {
-			h.log.WithError(err).Error("Failed to unmarshal scraper log message")
-			return err
+		if routingKey == config.RoutingLogScraper {
+			// Parse message
+			var scrapLog models.ScrapLog
+			if err := json.Unmarshal(message, &scrapLog); err != nil {
+				h.log.WithError(err).Error("Failed to unmarshal scraper log message")
+				return err
+			}
+
+			// Check if only stats are present
+			if scrapLog.Data == nil && scrapLog.Error == "" {
+				// Format message for WebSocket clients
+				wsMessage, err := json.Marshal(map[string]any{
+					"type":  "stats",
+					"stats": scrapLog.Stats,
+				})
+
+				if err != nil {
+					h.log.WithError(err).Error("Failed to marshal WebSocket message")
+					return err
+				}
+
+				// Broadcast message to all WebSocket clients
+				h.wsHub.Broadcast(wsMessage)
+				h.log.WithField("message", string(wsMessage)).Info("Broadcasting stats to WebSocket clients")
+				return nil
+			}
+
+			// Format message for WebSocket clients
+			wsMessage, err := json.Marshal(map[string]any{
+				"type":   "scraper_log",
+				"status": scrapLog.Status,
+				"data":   scrapLog.Data,
+				"error":  scrapLog.Error,
+				"stats":  scrapLog.Stats,
+			})
+
+			if err != nil {
+				h.log.WithError(err).Error("Failed to marshal WebSocket message")
+				return err
+			}
+
+			// Broadcast message to all WebSocket clients
+			h.wsHub.Broadcast(wsMessage)
+			h.log.WithField("message", string(wsMessage)).Info("Broadcasting message to WebSocket clients")
 		}
 
-		// Format message for WebSocket clients
-		wsMessage, err := json.Marshal(map[string]any{
-			"type":   "scraper_log",
-			"status": scrapLog.Status,
-			"data":   scrapLog.Data,
-			"error":  scrapLog.Error,
-			"stats":  scrapLog.Stats,
-		})
+		if routingKey == config.RoutingLogDownloader {
+			// Parse message
+			var dlLog models.VideoLog
+			if err := json.Unmarshal(message, &dlLog); err != nil {
+				h.log.WithError(err).Error("Failed to unmarshal downloader log message")
+				return err
+			}
 
-		if err != nil {
-			h.log.WithError(err).Error("Failed to marshal WebSocket message")
-			return err
+			// Get progress info for the message
+			var progress, total int
+			if dlLog.Data.Progress != nil {
+				progress = dlLog.Data.Progress.Downloaded
+				total = dlLog.Data.Progress.TotalSegments
+			}
+
+			// Format message for WebSocket clients
+			wsMessage, err := json.Marshal(map[string]any{
+				"type":     "downloader_log",
+				"status":   dlLog.Status,
+				"message":  dlLog.Data.Title,
+				"progress": progress,
+				"total":    total,
+				"error":    dlLog.Error,
+			})
+
+			if err != nil {
+				h.log.WithError(err).Error("Failed to marshal WebSocket message")
+				return err
+			}
+
+			// Broadcast message to all WebSocket clients
+			h.wsHub.Broadcast(wsMessage)
+			h.log.WithField("message", string(wsMessage)).Info("Broadcasting downloader log to WebSocket clients")
 		}
-
-		// Broadcast message to all WebSocket clients
-		h.wsHub.Broadcast(wsMessage)
-		h.log.WithField("message", string(wsMessage)).Info("Broadcasting message to WebSocket clients")
 
 		return nil
 	})
@@ -116,9 +172,36 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	api := r.Group("/api")
 	{
 		api.POST("/start", h.StartScraperHandler())
-		api.POST("/stop", h.StopScraperHandler())
 		api.GET("/stats", h.GetStatsHandler())
+		api.POST("/stop", h.StopScraperHandler())
 		// api.POST("/config", h.UpdateConfigHandler())
+	}
+}
+
+// StopScraperHandler handles requests to stop the scraper
+func (h *Handler) StopScraperHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Create command
+		command := models.ScrapingCommand{
+			Action: models.StopScrapingAction,
+		}
+
+		// Publish command to RabbitMQ
+		if err := h.publishCommand(command); err != nil {
+			h.log.WithError(err).Error("Failed to publish stop command")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to stop scraper",
+			})
+			return
+		}
+
+		// Return success response
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Scraper stopped successfully",
+		})
+
+		// Broadcast a message to all WebSocket clients
+		h.broadcastStatus("Scraping process stopped", "info")
 	}
 }
 
@@ -141,13 +224,13 @@ func (h *Handler) StartScraperHandler() gin.HandlerFunc {
 
 		// Validate input
 		if req.FromPages <= 0 {
-			req.FromPages = h.scrapCfg.StartPage
+			req.FromPages = 1
 		}
 		if req.ToPages < req.FromPages {
 			req.ToPages = req.FromPages
 		}
 		if req.ConcurrentDownload <= 0 {
-			req.ConcurrentDownload = h.downloadCfg.Concurrency
+			req.ConcurrentDownload = h.cfg.Downloader.DefaultWorker
 		}
 
 		// Create command
@@ -181,33 +264,6 @@ func (h *Handler) StartScraperHandler() gin.HandlerFunc {
 
 		// Broadcast a message to all WebSocket clients
 		h.broadcastStatus("Scraping process started", "info")
-	}
-}
-
-// StopScraperHandler handles requests to stop the scraper
-func (h *Handler) StopScraperHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Create stop command
-		command := models.ScrapingCommand{
-			Action: models.StopScrapingAction,
-		}
-
-		// Publish command to RabbitMQ
-		if err := h.publishCommand(command); err != nil {
-			h.log.WithError(err).Error("Failed to publish stop command")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to stop scraper",
-			})
-			return
-		}
-
-		// Return success response
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Stop command sent to scraper",
-		})
-
-		// Broadcast a message to all WebSocket clients
-		h.broadcastStatus("Scraping process is being stopped", "info")
 	}
 }
 
@@ -252,11 +308,29 @@ func (h *Handler) UpdateConfigHandler() gin.HandlerFunc {
 
 // publishCommand publishes a command to the RabbitMQ command queue
 func (h *Handler) publishCommand(command models.ScrapingCommand) error {
-	return h.msgClient.PublishJSON(
-		h.msgClient.(*messaging.RabbitMQClient).GetConfig().Exchange.Task,
+	routingKeys := []string{
+		config.RoutingCommandScraper,
+		config.RoutingCommandDownloader,
+	}
+
+	for _, routingKey := range routingKeys {
+		if err := h.message.PublishJSON(
+			h.message.(*messaging.RabbitMQClient).GetConfig().Exchange,
+			routingKey,
+			command,
+		); err != nil {
+			return err
+		}
+	}
+
+	if err := h.message.PublishJSON(
+		h.message.(*messaging.RabbitMQClient).GetConfig().Exchange,
 		CommandsRoutingKey,
 		command,
-	)
+	); err != nil {
+		return err
+	}
+	return nil
 }
 
 // broadcastStatus broadcasts a status message to all WebSocket clients

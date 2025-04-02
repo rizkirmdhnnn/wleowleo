@@ -32,13 +32,29 @@ type Client interface {
 
 	// Close closes the connection
 	Close() error
+
+	// GetConfig returns the RabbitMQ configuration
+	GetConfig() *config.RabbitMQConfig
+
+	// SetQos sets the prefetch count for the channel
+	SetQos(prefetch int) error
+
+	// PurgeQueue purges all messages from the queue
+	PurgeQueue(queueName string) error
+
+	// Nack all unacknowledged messages
+	AckAll()
+
+	// CloseConsumer closes the consumer channel
+	CloseConsumer() error
 }
 
 // RabbitMQClient implements the Client interface using RabbitMQ
 type RabbitMQClient struct {
-	conn    *amqp.Connection
-	channel *amqp.Channel
-	config  *config.RabbitMQConfig
+	conn        *amqp.Connection
+	channel     *amqp.Channel
+	config      *config.RabbitMQConfig
+	consumerTag string
 }
 
 // NewRabbitMQClient creates a new RabbitMQ client
@@ -47,12 +63,8 @@ func NewRabbitMQClient(config *config.RabbitMQConfig) (*RabbitMQClient, error) {
 		return nil, fmt.Errorf("rabbitmq URL is required")
 	}
 
-	if config.Exchange.Log == "" {
-		return nil, fmt.Errorf("log exchange name is required")
-	}
-
-	if config.Exchange.Task == "" {
-		return nil, fmt.Errorf("task exchange name is required")
+	if config.Exchange == "" {
+		return nil, fmt.Errorf("rabbitmq exchange is required")
 	}
 
 	client := &RabbitMQClient{
@@ -64,6 +76,30 @@ func NewRabbitMQClient(config *config.RabbitMQConfig) (*RabbitMQClient, error) {
 	}
 
 	return client, nil
+}
+
+// SetQos sets the prefetch count for the channel
+func (c *RabbitMQClient) SetQos(prefetch int) error {
+	return c.channel.Qos(prefetch, 0, false)
+}
+
+// PurgeQueue purges all messages from the queue
+func (c *RabbitMQClient) PurgeQueue(queueName string) error {
+	_, err := c.channel.QueuePurge(queueName, false)
+	return err
+}
+
+// AckAll acknowledges all unacknowledged messages
+func (c *RabbitMQClient) AckAll() {
+	c.channel.Ack(0, true)
+}
+
+// CloseConsumer closes the consumer channel
+func (c *RabbitMQClient) CloseConsumer() error {
+	if c.channel != nil {
+		return c.channel.Cancel("", false)
+	}
+	return nil
 }
 
 // connect establishes a connection to RabbitMQ
@@ -85,13 +121,13 @@ func (c *RabbitMQClient) connect() error {
 
 	// Declare log exchange
 	err = c.channel.ExchangeDeclare(
-		c.config.Exchange.Log, // name
-		"direct",              // type
-		true,                  // durable
-		false,                 // auto-deleted
-		false,                 // internal
-		false,                 // no-wait
-		nil,                   // arguments
+		c.config.Exchange,        // name
+		config.ExchangeTypeTopic, // type
+		false,                    // durable
+		false,                    // auto-deleted
+		false,                    // internal
+		false,                    // no-wait
+		nil,                      // arguments
 	)
 	if err != nil {
 		c.Close()
@@ -100,13 +136,13 @@ func (c *RabbitMQClient) connect() error {
 
 	// Declare task exchange
 	err = c.channel.ExchangeDeclare(
-		c.config.Exchange.Task, // name
-		"direct",               // type
-		true,                   // durable
-		false,                  // auto-deleted
-		false,                  // internal
-		false,                  // no-wait
-		nil,                    // arguments
+		c.config.Exchange,        // name
+		config.ExchangeTypeTopic, // type
+		false,                    // durable
+		false,                    // auto-deleted
+		false,                    // internal
+		false,                    // no-wait
+		nil,                      // arguments
 	)
 	if err != nil {
 		c.Close()
@@ -156,10 +192,9 @@ func (c *RabbitMQClient) PublishMessage(exchange, routingKey string, body []byte
 		false,      // mandatory
 		false,      // immediate
 		amqp.Publishing{
-			ContentType:  "application/octet-stream",
-			DeliveryMode: amqp.Persistent,
-			Body:         body,
-			Timestamp:    time.Now(),
+			ContentType: "application/octet-stream",
+			Body:        body,
+			Timestamp:   time.Now(),
 		},
 	)
 }
@@ -181,10 +216,9 @@ func (c *RabbitMQClient) PublishJSON(exchange, routingKey string, data interface
 		false,      // mandatory
 		false,      // immediate
 		amqp.Publishing{
-			ContentType:  "application/json",
-			DeliveryMode: amqp.Persistent,
-			Body:         body,
-			Timestamp:    time.Now(),
+			ContentType: "application/json",
+			Body:        body,
+			Timestamp:   time.Now(),
 		},
 	)
 }
@@ -193,11 +227,11 @@ func (c *RabbitMQClient) PublishJSON(exchange, routingKey string, data interface
 func (c *RabbitMQClient) DeclareQueue(name string) error {
 	_, err := c.channel.QueueDeclare(
 		name,  // name
-		true,  // durable
+		false, // durable
 		false, // delete when unused
 		false, // exclusive
 		false, // no-wait
-		nil,   // arguments
+		amqp.Table{"x-max-priority": 10},
 	)
 
 	return err
@@ -220,10 +254,6 @@ func (c *RabbitMQClient) BindQueue(queueName, exchange, routingKey string) error
 
 // Consume consumes messages from the given queue
 func (c *RabbitMQClient) Consume(queueName string, handler func(msgs []byte, routingKey string) error) error {
-	// Ensure queue exists
-	if err := c.DeclareQueue(queueName); err != nil {
-		return fmt.Errorf("failed to declare queue: %w", err)
-	}
 
 	// Set up consumer
 	msgs, err := c.channel.Consume(

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +11,7 @@ import (
 	"github.com/rizkirmdhn/wleowleo/internal/common/logger"
 	"github.com/rizkirmdhn/wleowleo/internal/common/messaging"
 	"github.com/rizkirmdhn/wleowleo/internal/downloader/service"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -19,21 +21,27 @@ func main() {
 		panic(err)
 	}
 
-	// Get the Scraper configuration
-	scraperCfg := cfg.GetDownloaderConfig()
-	rabbitCfg := cfg.GetRabbitMQConfig()
-
 	// Initialize logger
 	log := logger.New(cfg)
 
-	// Print the Scraper configuration
-	log.Infof("Downloader configuration: %+v", scraperCfg)
-	log.Infof("RabbitMQ configuration: %+v", cfg.RabbitMq)
+	// Print the Downloader configuration
+	log.WithFields(logrus.Fields{
+		"component": "downloader_main",
+		"config":    fmt.Sprintf("%+v", cfg.Downloader),
+	}).Debug("Downloader configuration loaded")
+
+	log.WithFields(logrus.Fields{
+		"component": "downloader_main",
+		"config":    fmt.Sprintf("%+v", cfg.RabbitMq),
+	}).Debug("RabbitMQ configuration loaded")
 
 	// Initialize RabbitMQ connection
 	messageClient, err := messaging.NewRabbitMQClient(&cfg.RabbitMq)
 	if err != nil {
-		log.Fatalf("Failed to initialize RabbitMQ: %s", err)
+		log.WithFields(logrus.Fields{
+			"component": "downloader_main",
+			"error":     err,
+		}).Fatal("Failed to initialize RabbitMQ")
 	}
 	defer messageClient.Close()
 
@@ -42,14 +50,15 @@ func main() {
 	defer cancel()
 
 	// Initialize the Downloader service
-	downloaderService := service.NewDownloaderService(scraperCfg, rabbitCfg, log, messageClient)
+	downloaderService := service.NewDownloaderService(&cfg.Downloader, &cfg.RabbitMq, log, messageClient)
 
 	// Start the service
 	if err := downloaderService.Start(); err != nil {
-		log.Fatalf("Failed to start Downloader service: %s", err)
+		log.WithFields(logrus.Fields{
+			"component": "downloader_main",
+			"error":     err,
+		}).Fatal("Failed to start Downloader service")
 	}
-
-	log.Info("Downloader service started successfully")
 
 	// Setup signal handling for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -57,7 +66,13 @@ func main() {
 
 	// Block until we receive a termination signal
 	sig := <-sigCh
-	log.Infof("Received signal %s, shutting down...", sig)
+	log.WithFields(logrus.Fields{
+		"component": "downloader_main",
+		"signal":    sig,
+	}).Info("Received signal, shutting down")
+
+	// Stop the service
+	// downloaderService.Stop()
 
 	// Trigger graceful shutdown
 	cancel()

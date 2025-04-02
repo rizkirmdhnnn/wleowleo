@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/rizkirmdhn/wleowleo/internal/common/logger"
 	"github.com/rizkirmdhn/wleowleo/internal/common/messaging"
 	"github.com/rizkirmdhn/wleowleo/internal/web/handler"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -19,22 +21,33 @@ func main() {
 	}
 
 	// Get the configuration
-	webCfg := cfg.GetWebPanelConfig()
-	scrpCfg := cfg.GetScraperConfig()
-	dlCfg := cfg.GetDownloaderConfig()
+	// webCfg := cfg.GetWebPanelConfig()
+	// scrpCfg := cfg.GetScraperConfig()
+	// dlCfg := cfg.GetDownloaderConfig()
 
 	// Initialize logger
 	log := logger.New(cfg)
 
 	// Print the Web panel configuration
-	log.Infof("Web panel configuration: %+v", webCfg)
+	log.WithFields(logrus.Fields{
+		"component": "web_main",
+		"config":    fmt.Sprintf("%+v", cfg.WebPanel),
+	}).Debug("Web panel configuration loaded")
 
 	// Initialize message consumer
 	msgClient, err := messaging.NewRabbitMQClient(&cfg.RabbitMq)
 	if err != nil {
-		log.Fatalf("Failed to create RabbitMQ client: %v", err)
+		log.WithFields(logrus.Fields{
+			"component": "web_main",
+			"error":     err,
+		}).Fatal("Failed to create RabbitMQ client")
 	}
 	defer msgClient.Close()
+
+	// Check environment
+	if cfg.App.Env == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
 	// Initialize the gin router
 	r := gin.Default()
@@ -46,14 +59,20 @@ func main() {
 	r.LoadHTMLGlob("internal/web/templates/*")
 
 	// Setup Handlers
-	h := handler.NewHander(webCfg, scrpCfg, dlCfg, log, msgClient)
+	h := handler.NewHander(cfg, log, msgClient)
 
 	// Register routes
 	h.RegisterRoutes(r)
 
 	// Start the web server
-	log.Infof("Server starting on port %v\n", webCfg.Port)
-	if err := http.ListenAndServe(":"+strconv.Itoa(webCfg.Port), r); err != nil {
-		log.Fatalf("Failed to start server: %v\n", err)
+	log.WithFields(logrus.Fields{
+		"component": "web_main",
+		"port":      cfg.WebPanel.Port,
+	}).Info("Server starting")
+	if err := http.ListenAndServe(":"+strconv.Itoa(cfg.WebPanel.Port), r); err != nil {
+		log.WithFields(logrus.Fields{
+			"component": "web_main",
+			"error":     err,
+		}).Fatal("Failed to start server")
 	}
 }

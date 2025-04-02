@@ -1,8 +1,12 @@
+# Build stage
 FROM golang:alpine AS builder
 
 WORKDIR /app
 
-# Copy go.mod and go.sum files
+# Install dependencies
+RUN apk add --no-cache git
+
+# Copy go.mod dan go.sum
 COPY go.mod go.sum ./
 
 # Download dependencies
@@ -11,29 +15,25 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o scraper ./cmd/scraper
+# Build Go binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o scraper ./cmd/scraper
 
-# Create final image
-FROM alpine:latest
+# Final image (Headless Chrome dari Chromedp)
+FROM chromedp/headless-shell:latest
 
 WORKDIR /app
 
-# Install Chrome and FFmpeg
-RUN apk add --no-cache \
-    chromium \
-    ca-certificates \
-    tzdata
-
-# Set Chrome environment variables
-ENV CHROME_BIN=/usr/bin/chromium-browser \
-    CHROME_PATH=/usr/lib/chromium/
-
-# Copy binary from builder stage
+# Copy Go binary
 COPY --from=builder /app/scraper /app/
 
 # Copy config file
 COPY --from=builder /app/config.json /app/
 
-# Set the entrypoint
+# Set execution permissions
+RUN chmod +x /app/scraper
+
+# Set environment variables for Chromedp
+ENV CHROME_PATH="/headless-shell/headless-shell"
+
+# Run the application
 ENTRYPOINT ["/app/scraper"]

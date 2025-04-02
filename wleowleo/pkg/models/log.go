@@ -25,7 +25,7 @@ type ProgressInfo struct {
 type ScrapLog struct {
 	Status string `json:"status"`
 	Error  string `json:"error,omitempty"`
-	Data   Page   `json:"data"`
+	Data   *Page  `json:"data,omitempty"`
 	Stats  *Stats `json:"stats,omitempty"`
 }
 

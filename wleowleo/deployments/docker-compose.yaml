@@ -61,9 +61,15 @@ services:
     environment:
       - TZ=Asia/Jakarta
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+
     depends_on:
+      scraper:
+        condition: service_started
+      downloader:
+        condition: service_started
       rabbitmq:
         condition: service_healthy
+
     networks:
       - wleowleo-network
     restart: unless-stopped

@@ -20,11 +20,6 @@ import (
 
 // Constants for the scraper service
 const (
-	ConfigRoutingKey   = "downloader.config"
-	TaskRoutingKey     = "downloader.task"
-	LogRoutingKey      = "scraper.log"
-	CommandsRoutingKey = "scraper.start"
-
 	DefaultMaxRetries = 3
 	DefaultRetryDelay = 2 * time.Second
 	DefaultTimeout    = 10 * time.Second
@@ -66,7 +61,7 @@ func (s *ScraperService) Start() error {
 	}
 
 	// Consume messages
-	return s.message.Consume(s.rabbitCfg.Queue.CommandQueue, func(msg []byte, routingKey string) error {
+	return s.message.Consume(s.rabbitCfg.Queue.Scraper, func(msg []byte, routingKey string) error {
 		return s.handleCommand(ctx, msg)
 	})
 }
@@ -75,11 +70,21 @@ func (s *ScraperService) Start() error {
 func (s *ScraperService) Stop() {
 	if s.cancelFunc != nil {
 		s.cancelFunc()
-		s.cancelFunc = nil // Pastikan kita tidak mencoba membatalkan context yang sama dua kali
+		s.cancelFunc = nil // Make sure we don't try to cancel the same context twice
 	}
-	// Tunggu semua goroutine selesai
+
+	// Purge downloader queue
+	if err := s.message.PurgeQueue(s.rabbitCfg.Queue.DownloadTask); err != nil {
+		s.log.WithFields(logrus.Fields{
+			"queue":     s.rabbitCfg.Queue.DownloadTask,
+			"component": "messaging",
+		}).WithError(err).Error("Failed to purge downloader queue")
+	}
+
+	// Wait for all goroutines to finish
 	s.wg.Wait()
-	s.log.Info("Scraper service stopped gracefully")
+
+	s.log.WithField("component", "service").Info("Scraper service stopped gracefully")
 }
 
 // setupMessaging sets up the messaging infrastructure
@@ -90,19 +95,28 @@ func (s *ScraperService) setupMessaging() error {
 		routingKeys []string
 	}{
 		{
-			name:        s.rabbitCfg.Queue.DownloaderQueue,
-			exchange:    s.rabbitCfg.Exchange.Task,
-			routingKeys: []string{TaskRoutingKey, ConfigRoutingKey},
+			// Declare the task queue
+			name:        s.rabbitCfg.Queue.DownloadTask,
+			exchange:    s.rabbitCfg.Exchange,
+			routingKeys: []string{config.RoutingTaskDownload},
 		},
 		{
-			name:        s.rabbitCfg.Queue.CommandQueue,
-			exchange:    s.rabbitCfg.Exchange.Task,
-			routingKeys: []string{CommandsRoutingKey},
+			// Declare the command downloader service queue
+			name:        s.rabbitCfg.Queue.Downloader,
+			exchange:    s.rabbitCfg.Exchange,
+			routingKeys: []string{config.RoutingCommandDownloader},
 		},
 		{
-			name:        s.rabbitCfg.Queue.LogQueue,
-			exchange:    s.rabbitCfg.Exchange.Log,
-			routingKeys: []string{LogRoutingKey},
+			// Declare the command scraper service queue
+			name:        s.rabbitCfg.Queue.Scraper,
+			exchange:    s.rabbitCfg.Exchange,
+			routingKeys: []string{config.RoutingCommandScraper},
+		},
+		{
+			// Declare the log queue
+			name:        s.rabbitCfg.Queue.Log,
+			exchange:    s.rabbitCfg.Exchange,
+			routingKeys: []string{config.RoutingLogDownloader, config.RoutingLogScraper},
 		},
 	}
 
@@ -132,13 +146,20 @@ func (s *ScraperService) handleCommand(ctx context.Context, msg []byte) error {
 	}
 
 	// Log the command
-	s.log.WithField("command", command).Info("Received command")
+	s.log.WithFields(logrus.Fields{
+		"action":    command.Action,
+		"data":      command.Data,
+		"component": "command_handler",
+	}).Info("Received command")
 
 	// Check the command type and act accordingly
 	switch command.Action {
 	case models.StartScrapingAction:
 		if ctx.Err() != nil {
-			s.log.Info("Menghentikan proses scraping sebelum memulai")
+			s.log.WithFields(logrus.Fields{
+				"reason":    "context_canceled",
+				"component": "command_handler",
+			}).Info("Stopping scraping process before starting")
 		}
 
 		// Create a new context for the scraping process
@@ -148,9 +169,6 @@ func (s *ScraperService) handleCommand(ctx context.Context, msg []byte) error {
 		// Get the parameters with sensible defaults
 		startPage := getIntWithDefault(command.Data.StartPage, 1)
 		endPage := getIntWithDefault(command.Data.EndPage, 5)
-
-		// Publish the downloader configuration
-		s.publishDownloaderConfig(command)
 
 		// Track this goroutine with WaitGroup
 		s.wg.Add(1)
@@ -164,13 +182,23 @@ func (s *ScraperService) handleCommand(ctx context.Context, msg []byte) error {
 	case models.StopScrapingAction:
 		// Implement the stop scraping logic
 		if s.cancelFunc != nil {
-			s.log.Info("Menghentikan semua proses scraping...")
+			s.log.WithFields(logrus.Fields{
+				"status":    "stopping",
+				"component": "command_handler",
+			}).Info("Stopping all scraping processes")
 			s.cancelFunc()
 			s.cancelFunc = nil
-			s.log.Info("Perintah stop telah dikirim, menunggu semua proses berhenti")
+			s.log.WithFields(logrus.Fields{
+				"status":    "waiting",
+				"component": "command_handler",
+			}).Info("Stop command has been sent, waiting for all processes to stop")
 		} else {
-			s.log.Info("Tidak ada proses scraping yang berjalan")
+			s.log.WithFields(logrus.Fields{
+				"status":    "idle",
+				"component": "command_handler",
+			}).Info("No scraping processes are running")
 		}
+
 		return nil
 
 	default:
@@ -183,11 +211,16 @@ func (s *ScraperService) StartScraping(ctx context.Context, startPage, endPage i
 	s.log.WithFields(logrus.Fields{
 		"startPage": startPage,
 		"endPage":   endPage,
+		"component": "scraper",
 	}).Info("Starting scraping process")
 
-	// Periksa apakah context sudah dibatalkan
+	// Check if context has already been canceled
 	if ctx.Err() != nil {
-		s.log.Info("Scraping dibatalkan sebelum dimulai")
+		s.log.WithFields(logrus.Fields{
+			"reason":    "context_canceled",
+			"stage":     "initialization",
+			"component": "scraper",
+		}).Info("Scraping canceled before starting")
 		return
 	}
 
@@ -202,34 +235,63 @@ func (s *ScraperService) StartScraping(ctx context.Context, startPage, endPage i
 	dataPage, err := s.processPage(browserCtx, startPage, endPage)
 	if err != nil {
 		if ctx.Err() != nil {
-			s.log.Info("Scraping dihentikan selama pemrosesan halaman")
+			s.log.WithFields(logrus.Fields{
+				"reason":    "context_canceled",
+				"stage":     "page_processing",
+				"component": "scraper",
+			}).Info("Scraping stopped during page processing")
 		} else {
-			s.log.WithError(err).Error("Error processing page")
+			s.log.WithFields(logrus.Fields{
+				"start_page": startPage,
+				"end_page":   endPage,
+				"component":  "scraper",
+			}).WithError(err).Error("Error processing page")
 		}
 		return
 	}
 
-	// Periksa lagi sebelum memproses URL
+	// Check again before processing URL
 	if ctx.Err() != nil {
-		s.log.Info("Scraping dihentikan sebelum memproses URL")
+		s.log.WithFields(logrus.Fields{
+			"reason":    "context_canceled",
+			"stage":     "before_url_processing",
+			"component": "scraper",
+		}).Info("Scraping stopped before processing URL")
 		return
 	}
+
+	// Publish the total number of pages scraped
+	s.publishStats(&models.Stats{TotalPageScraped: dataPage.Total})
 
 	// Process the URLs
 	if err := s.processUrls(allocCtx, dataPage); err != nil {
 		if ctx.Err() != nil {
-			s.log.Info("Scraping dihentikan selama pemrosesan URL")
+			s.log.WithFields(logrus.Fields{
+				"reason":    "context_canceled",
+				"stage":     "url_processing",
+				"component": "scraper",
+			}).Info("Scraping stopped during URL processing")
 		} else {
-			s.log.WithError(err).Error("Error processing URLs")
+			s.log.WithFields(logrus.Fields{
+				"total_urls": len(dataPage.Urls),
+				"component":  "scraper",
+			}).WithError(err).Error("Error processing URLs")
 		}
 		return
 	}
 
-	// Periksa apakah berhenti karena perintah stop
+	// Check if stopped due to stop command
 	if ctx.Err() != nil {
-		s.log.Info("Scraping dihentikan oleh perintah stop")
+		s.log.WithFields(logrus.Fields{
+			"reason":    "context_canceled",
+			"stage":     "completion",
+			"component": "scraper",
+		}).Info("Scraping stopped by stop command")
 	} else {
-		s.log.Info("Scraping complete")
+		s.log.WithFields(logrus.Fields{
+			"total_pages_scraped": dataPage.Total,
+			"component":           "scraper",
+		}).Info("Scraping complete")
 	}
 }
 
@@ -237,12 +299,6 @@ func (s *ScraperService) StartScraping(ctx context.Context, startPage, endPage i
 func (s *ScraperService) createChromeContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserAgent(s.config.UserAgent),
-		// chromedp.WindowSize(1920, 1080),
-		// chromedp.DisableGPU,
-		// Add additional options for reliability in containerized environments
-		// chromedp.NoFirstRun,
-		// chromedp.NoDefaultBrowserCheck,
-		// chromedp.Flag("headless", false),
 	)
 	return chromedp.NewExecAllocator(ctx, opts...)
 }
@@ -254,7 +310,11 @@ func (s *ScraperService) processPage(ctx context.Context, fromPage, toPage int) 
 	// For each page in the range
 	for i := fromPage; i <= toPage; i++ {
 		url := fmt.Sprintf("%s/page-%d", s.config.Host, i)
-		s.log.WithField("url", url).Info("Scraping page")
+		s.log.WithFields(logrus.Fields{
+			"url":       url,
+			"page":      i,
+			"component": "page_processor",
+		}).Info("Scraping page")
 
 		var pageLinks []string
 		var pageTitles []string
@@ -270,7 +330,11 @@ func (s *ScraperService) processPage(ctx context.Context, fromPage, toPage int) 
 		)
 
 		if err != nil {
-			s.log.WithError(err).WithField("url", url).Error("Error scraping page")
+			s.log.WithFields(logrus.Fields{
+				"url":       url,
+				"page":      i,
+				"component": "page_processor",
+			}).WithError(err).Error("Error scraping page")
 			continue // Try the next page instead of failing completely
 		}
 
@@ -290,14 +354,21 @@ func (s *ScraperService) processPage(ctx context.Context, fromPage, toPage int) 
 		}
 
 		s.log.WithFields(logrus.Fields{
-			"page":  i,
-			"links": len(pageLinks),
+			"page":      i,
+			"links":     len(pageLinks),
+			"url":       url,
+			"component": "page_processor",
 		}).Info("Page scraped successfully")
 	}
 
 	// Cancel the context to free up resources
 	chromedp.Cancel(ctx)
-	s.log.WithField("total", len(links)).Info("Total links scraped")
+	s.log.WithFields(logrus.Fields{
+		"total":      len(links),
+		"start_page": fromPage,
+		"end_page":   toPage,
+		"component":  "page_processor",
+	}).Info("Total links scraped")
 	return &models.DataPage{
 		Total: len(links),
 		Urls:  links,
@@ -307,7 +378,9 @@ func (s *ScraperService) processPage(ctx context.Context, fromPage, toPage int) 
 // processUrls processes the URLs found during scraping to extract m3u8 links
 func (s *ScraperService) processUrls(ctx context.Context, dataModel *models.DataPage) error {
 	if len(dataModel.Urls) == 0 {
-		s.log.Warn("No URLs to process")
+		s.log.WithFields(logrus.Fields{
+			"component": "url_processor",
+		}).Warn("No URLs to process")
 		return nil
 	}
 
@@ -324,19 +397,24 @@ func (s *ScraperService) processUrls(ctx context.Context, dataModel *models.Data
 
 	// Process URLs one by one
 	for i, page := range dataModel.Urls {
-		// Periksa apakah ada perintah stop (context dibatalkan)
+		// Check if there's a stop command (context canceled)
 		select {
 		case <-ctx.Done():
-			s.log.Info("Menghentikan proses pengolahan URL - perintah stop diterima")
+			s.log.WithFields(logrus.Fields{
+				"reason":    "context_canceled",
+				"stage":     "url_processing_loop",
+				"component": "url_processor",
+			}).Info("Stopping URL processing - stop command received")
 			return nil
 		default:
-			// Lanjutkan pemrosesan jika tidak ada pembatalan
+			// Continue processing if there's no cancellation
 		}
 
 		s.log.WithFields(logrus.Fields{
-			"progress": fmt.Sprintf("%d/%d", i+1, len(dataModel.Urls)),
-			"title":    page.Title,
-			"url":      page.URL,
+			"progress":  fmt.Sprintf("%d/%d", i+1, len(dataModel.Urls)),
+			"title":     page.Title,
+			"url":       page.URL,
+			"component": "url_processor",
 		}).Info("Processing URL")
 
 		// Process the URL with retries
@@ -353,13 +431,17 @@ func (s *ScraperService) processUrls(ctx context.Context, dataModel *models.Data
 				totalUrlScraped, len(dataModel.Urls))
 		}
 
-		// Jeda pendek antara URL, tapi juga periksa perintah stop
+		// Short pause between URLs, but also check for stop command
 		select {
 		case <-ctx.Done():
-			s.log.Info("Menghentikan pengolahan selama jeda - perintah stop diterima")
+			s.log.WithFields(logrus.Fields{
+				"reason":    "context_canceled",
+				"stage":     "url_processing_pause",
+				"component": "url_processor",
+			}).Info("Stopping processing during pause - stop command received")
 			return nil
 		case <-time.After(500 * time.Millisecond):
-			// Lanjutkan setelah jeda
+			// Continue after pause
 		}
 	}
 
@@ -367,6 +449,8 @@ func (s *ScraperService) processUrls(ctx context.Context, dataModel *models.Data
 	s.log.WithFields(logrus.Fields{
 		"total_page":    len(dataModel.Urls),
 		"total_scraped": totalUrlScraped,
+		"success_rate":  fmt.Sprintf("%.2f%%", float64(totalUrlScraped)/float64(len(dataModel.Urls))*100),
+		"component":     "url_processor",
 	}).Info("Completed processing video links")
 
 	return nil
@@ -379,12 +463,14 @@ func (s *ScraperService) processURLWithRetries(ctx context.Context, page models.
 	maxRetries := DefaultMaxRetries
 	retryDelay := DefaultRetryDelay
 
-	// Periksa jika context sudah dibatalkan (perintah stop diterima)
+	// Check if context has been canceled (stop command received)
 	if ctx.Err() != nil {
 		s.log.WithFields(logrus.Fields{
-			"title": page.Title,
-			"url":   page.URL,
-		}).Info("Melewatkan pemrosesan URL - perintah stop diterima")
+			"title":     page.Title,
+			"url":       page.URL,
+			"reason":    "context_canceled",
+			"component": "url_processor",
+		}).Info("Skipping URL processing - stop command received")
 		return false
 	}
 
@@ -408,18 +494,21 @@ func (s *ScraperService) processURLWithRetries(ctx context.Context, page models.
 		return true
 	}
 
-	// Jika context sudah dibatalkan setelah percobaan pertama, jangan lanjutkan
+	// If context has been canceled after first attempt, don't continue
 	if ctx.Err() != nil {
 		s.log.WithFields(logrus.Fields{
-			"title": page.Title,
-			"url":   page.URL,
-		}).Info("Menghentikan retry - perintah stop diterima")
+			"title":     page.Title,
+			"url":       page.URL,
+			"reason":    "context_canceled",
+			"stage":     "after_first_attempt",
+			"component": "url_processor",
+		}).Info("Stopping retry - stop command received")
 		return false
 	}
 
-	// Logika percobaan ulang (retry)
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		// Periksa apakah context telah dibatalkan sebelum memulai retry baru
+	// Retry logic
+	for attempt := range maxRetries {
+		// Check if context has been canceled before starting new retry
 		if ctx.Err() != nil {
 			s.log.WithFields(logrus.Fields{
 				"title": page.Title,
@@ -434,21 +523,21 @@ func (s *ScraperService) processURLWithRetries(ctx context.Context, page models.
 			"url":     page.URL,
 		}).Info("Retrying URL")
 
-		// Tunggu sebelum mencoba ulang dengan select yang bisa diinterupsi
+		// Wait before retrying with interruptible select
 		timer := time.NewTimer(retryDelay)
 		select {
 		case <-ctx.Done():
-			timer.Stop() // Pastikan timer dibersihkan
+			timer.Stop() // Make sure timer is cleaned up
 			s.log.WithFields(logrus.Fields{
 				"title": page.Title,
 				"url":   page.URL,
-			}).Info("Berhenti selama delay retry - perintah stop diterima")
+			}).Info("Stopping during retry delay - stop command received")
 			return false
 		case <-timer.C:
-			// Lanjutkan setelah jeda
+			// Continue after pause
 		}
 
-		// Periksa lagi sebelum memulai percobaan baru
+		// Check again before starting new attempt
 		if ctx.Err() != nil {
 			return false
 		}
@@ -474,17 +563,17 @@ func (s *ScraperService) processURLWithRetries(ctx context.Context, page models.
 			return true
 		}
 
-		// Periksa lagi jika konteks dibatalkan setelah upaya gagal
+		// Check again if context was canceled after failed attempt
 		if ctx.Err() != nil {
 			s.log.WithFields(logrus.Fields{
 				"title": page.Title,
 				"url":   page.URL,
-			}).Info("Berhenti setelah percobaan gagal - perintah stop diterima")
+			}).Info("Stopping after failed attempt - stop command received")
 			return false
 		}
 
 		// Publish retry failure log
-		s.publishScraperLog("retry", page,
+		s.publishScraperLog("warm", page,
 			fmt.Errorf("retry attempt %d failed", attempt+1),
 			*totalScraped, len(dataModel.Urls))
 	}
@@ -502,8 +591,11 @@ func (s *ScraperService) processURL(ctx context.Context, page models.Page, timeo
 	// Periksa pembatalan context terlebih dahulu
 	if ctx.Err() != nil {
 		s.log.WithFields(logrus.Fields{
-			"title": page.Title,
-			"url":   page.URL,
+			"title":     page.Title,
+			"url":       page.URL,
+			"reason":    "context_canceled",
+			"component": "url_processor",
+			"stage":     "process_url_start",
 		}).Info("Melewatkan pemrosesan URL - perintah stop diterima")
 		return result
 	}
@@ -543,22 +635,25 @@ func (s *ScraperService) processURL(ctx context.Context, page models.Page, timeo
 		}
 	}()
 
-	// Buat timer untuk timeout
+	// Create timer for timeout
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
-	// Tunggu link m3u8, error, timeout, atau pembatalan context
+	// Wait for m3u8 link, error, timeout, or context cancellation
 	select {
 	case <-ctx.Done():
 		s.log.WithFields(logrus.Fields{
-			"title": page.Title,
-			"url":   page.URL,
+			"title":     page.Title,
+			"url":       page.URL,
+			"reason":    "context_canceled",
+			"component": "url_processor",
+			"stage":     "waiting_for_m3u8",
 		}).Info("Menghentikan pemrosesan URL - perintah stop diterima")
-		// Bersihkan goroutine untuk navigasi
+		// Clean up goroutine for navigation
 		cancelListener()
 		// Tunggu goroutine navigasi selesai
 		<-done
-		// Coba navigasi ke halaman kosong untuk membersihkan
+		// Try navigating to empty page for cleanup
 		cleanup := context.Background()
 		cleanCtx, cleanCancel := chromedp.NewContext(cleanup)
 		defer cleanCancel()
@@ -569,30 +664,37 @@ func (s *ScraperService) processURL(ctx context.Context, page models.Page, timeo
 		result.Page.M3u8 = m3u8Link
 		result.Success = true
 		s.log.WithFields(logrus.Fields{
-			"title": page.Title,
-			"url":   page.URL,
-			"m3u8":  m3u8Link,
+			"title":     page.Title,
+			"url":       page.URL,
+			"m3u8":      m3u8Link,
+			"component": "url_processor",
+			"status":    "success",
 		}).Info("Successfully found video link")
 
-		// Hentikan timer karena tidak dibutuhkan lagi
+		// Stop timer as it's no longer needed
 		timer.Stop()
 
 		// Navigate to blank page to stop any media loading and free resources
 		cleanupErr := chromedp.Run(ctx, chromedp.Navigate("about:blank"))
 		if cleanupErr != nil && ctx.Err() == nil {
-			s.log.WithError(cleanupErr).Warn("Error while navigating to blank page")
+			s.log.WithFields(logrus.Fields{
+				"component": "browser_cleanup",
+				"url":       page.URL,
+			}).WithError(cleanupErr).Warn("Error while navigating to blank page")
 		}
 
 	case err := <-errChan:
-		if err != nil && ctx.Err() == nil { // Jangan log error jika context dibatalkan
-			s.log.WithError(err).WithFields(logrus.Fields{
-				"title": page.Title,
-				"url":   page.URL,
-			}).Error("Error navigating to URL")
+		if err != nil && ctx.Err() == nil { // Don't log error if context was canceled
+			s.log.WithFields(logrus.Fields{
+				"title":     page.Title,
+				"url":       page.URL,
+				"component": "url_processor",
+				"status":    "error",
+			}).WithError(err).Error("Error navigating to URL")
 		}
 
 	case <-timer.C:
-		if ctx.Err() == nil { // Jangan log timeout jika context dibatalkan
+		if ctx.Err() == nil { // Don't log timeout if context was canceled
 			s.log.WithFields(logrus.Fields{
 				"title": page.Title,
 				"url":   page.URL,
@@ -611,7 +713,7 @@ func (s *ScraperService) processURL(ctx context.Context, page models.Page, timeo
 
 // publishVideoLink publishes a video link message
 func (s *ScraperService) publishVideoLink(page models.Page) {
-	s.message.PublishJSON(s.rabbitCfg.Exchange.Task, TaskRoutingKey, models.Video{
+	s.message.PublishJSON(s.rabbitCfg.Exchange, config.RoutingTaskDownload, models.Video{
 		Title: page.Title,
 		URL:   page.URL,
 		M3U8:  &page.M3u8,
@@ -622,7 +724,7 @@ func (s *ScraperService) publishVideoLink(page models.Page) {
 func (s *ScraperService) publishScraperLog(status string, page models.Page, err error, totalScraped, totalPages int) {
 	log := models.ScrapLog{
 		Status: status,
-		Data: models.Page{
+		Data: &models.Page{
 			Title: page.Title,
 			URL:   page.URL,
 			M3u8:  page.M3u8,
@@ -637,14 +739,14 @@ func (s *ScraperService) publishScraperLog(status string, page models.Page, err 
 		log.Error = err.Error()
 	}
 
-	s.message.PublishJSON(s.rabbitCfg.Exchange.Log, LogRoutingKey, log)
+	s.message.PublishJSON(s.rabbitCfg.Exchange, config.RoutingLogScraper, log)
 }
 
-// publishConfig publishes the downloader configuration
-func (s *ScraperService) publishDownloaderConfig(cfg models.ScrapingCommand) {
-	if err := s.message.PublishJSON(s.rabbitCfg.Exchange.Task, ConfigRoutingKey, cfg); err != nil {
-		s.log.WithError(err).Error("Failed to publish downloader config")
-	}
+// publishStats publishes the current stats
+func (s *ScraperService) publishStats(stats *models.Stats) {
+	s.message.PublishJSON(s.rabbitCfg.Exchange, config.RoutingLogScraper, models.ScrapLog{
+		Stats: stats,
+	})
 }
 
 // Helper function to get int value with fallback default

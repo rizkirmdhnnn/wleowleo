@@ -3,6 +3,7 @@ package websocket
 import (
 	"sync"
 
+	"github.com/rizkirmdhn/wleowleo/internal/common/logger"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,7 +32,7 @@ type Hub struct {
 	unregister chan *Client
 
 	// Logger
-	log *logrus.Logger
+	log *logger.ComponentLogger
 
 	// Mutex for thread safety
 	mu sync.Mutex
@@ -44,7 +45,7 @@ func NewHub(log *logrus.Logger) *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
-		log:        log,
+		log:        logger.NewComponentLogger(log, "websocket_hub"),
 	}
 }
 

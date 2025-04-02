@@ -5,7 +5,7 @@
     "env": "development"
   },
   "rabbitmq": {
-    "url": "amqp://guest:guest@rabbitmq:5672/",
+    "url": "amqp://guest:guest@localhost:5672/",
     "exchange": {
       "task": "task_exchange",
       "log": "log_exchange"
@@ -19,13 +19,11 @@
     "reconnectTimeout": 10000
   },
   "scraper": {
-    "host": "dosa",
-    "startPage": 1,
-    "endPage": 2,
+    "host": "DOSAAAA",
     "userAgent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
   },
   "downloader": {
-    "concurrency": 2,
+    "defaultWorker": 5,
     "tempDir": "./temp",
     "downloadDir": "./downloads"
   },
